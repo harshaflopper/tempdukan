@@ -34,12 +34,12 @@ class Settings:
     @property
     def WENDAL_API_KEY(self) -> str:
         load_dotenv(override=True)
-        return os.getenv("WENDAL_API_KEY", "WENDAL_DEMO_VENDOR_KEY_9921")
+        return os.getenv("VENDAL_API_KEY", os.getenv("WENDAL_API_KEY", "VENDAL_DEMO_KEY_9921"))
 
     @property
     def WENDAL_VENDOR_PHONE(self) -> str:
         load_dotenv(override=True)
-        return os.getenv("WENDAL_VENDOR_PHONE", "+919876543210")
+        return os.getenv("VENDAL_VENDOR_PHONE", os.getenv("WENDAL_VENDOR_PHONE", "+919876543210"))
 
     @property
     def VECTOR_SIMILARITY_THRESHOLD(self) -> float:

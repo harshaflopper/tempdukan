@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import CameraScanner from './CameraScanner';
 import VoiceRecorder from './VoiceRecorder';
-import { Sparkles, Camera, Receipt, Volume2, CheckCircle2, Check, Send, User, Phone, MessageSquare } from 'lucide-react';
+import { Sparkles, Camera, Receipt, Volume2, CheckCircle2, Check, Send, User, Phone, MessageSquare, Tag, Wallet, AlertCircle } from 'lucide-react';
 
 export default function AIBillWindow({
   videoRef,
@@ -26,7 +26,11 @@ export default function AIBillWindow({
   customerPhone,
   setCustomerPhone,
   sendSms,
-  setSendSms
+  setSendSms,
+  discountAmount,
+  setDiscountAmount,
+  customUdhaarAmount,
+  setCustomUdhaarAmount
 }) {
   const [spokenText, setSpokenText] = useState('');
 
@@ -39,6 +43,8 @@ export default function AIBillWindow({
     }
   };
 
+  const isNewCustomerWithoutPhone = customerName && customerName.trim() && (!customerPhone || !customerPhone.trim());
+
   return (
     <div className="flex flex-col gap-4 animate-in fade-in">
       {/* Window Header Banner */}
@@ -46,22 +52,22 @@ export default function AIBillWindow({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 font-heading font-extrabold text-base">
             <Receipt className="w-5 h-5 text-emerald-400" />
-            <span>AI Bill & Wendal SMS Window</span>
+            <span>AI Bill & Vendal SMS Window</span>
           </div>
           <span className="text-[10px] font-extrabold text-emerald-300 bg-emerald-900/60 px-2 py-0.5 rounded-full border border-emerald-700">
-            Wendal Automated SMS
+            Vendal Automated SMS
           </span>
         </div>
         <p className="text-xs text-emerald-200 font-medium">
-          Talk directly to AI or snap product photo to automatically generate customer bills & send Wendal SMS receipts.
+          Talk directly to AI ("Ravi ji 20 Maggi, 2 Parle-G, 250 udhar") to match inventory, apply discount & send Vendal SMS bill.
         </p>
       </div>
 
       {/* CUSTOMER PROFILE & SMS TOGGLE SELECTOR */}
-      <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-2.5 text-xs">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+      <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-3 text-xs">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-2">
           <span className="font-extrabold text-slate-700 uppercase tracking-wider">
-            Customer Profile (Optional)
+            Customer Profile & Billing Options
           </span>
           <label className="flex items-center gap-1.5 cursor-pointer font-bold text-emerald-800 select-none">
             <input
@@ -71,7 +77,7 @@ export default function AIBillWindow({
               className="w-3.5 h-3.5 accent-emerald-600 rounded"
             />
             <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Send Wendal SMS</span>
+            <span>Send Vendal SMS</span>
           </label>
         </div>
 
@@ -98,6 +104,39 @@ export default function AIBillWindow({
             />
           </div>
         </div>
+
+        {/* Soft prompt for new customer mobile entry */}
+        {isNewCustomerWithoutPhone && (
+          <div className="bg-amber-50 border border-amber-300 p-2.5 rounded-xl flex items-center gap-2 text-[11px] font-bold text-amber-900 animate-in fade-in">
+            <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+            <span>Customer '{customerName}': Enter mobile number above to send Vendal SMS bill & save Udhaar profile.</span>
+          </div>
+        )}
+
+        {/* Discount & Udhaar Manual Adjusters */}
+        <div className="grid grid-cols-2 gap-2 border-t border-slate-100 pt-2">
+          <div className="relative flex items-center">
+            <Tag className="w-3.5 h-3.5 text-emerald-600 absolute left-3" />
+            <input
+              type="number"
+              value={discountAmount || ''}
+              onChange={(e) => setDiscountAmount && setDiscountAmount(e.target.value)}
+              placeholder="Discount (₹)"
+              className="w-full pl-8 pr-2.5 py-2 bg-emerald-50/50 border border-emerald-200 rounded-xl font-bold text-emerald-900 focus:outline-none focus:border-emerald-600"
+            />
+          </div>
+
+          <div className="relative flex items-center">
+            <Wallet className="w-3.5 h-3.5 text-amber-600 absolute left-3" />
+            <input
+              type="number"
+              value={customUdhaarAmount || ''}
+              onChange={(e) => setCustomUdhaarAmount && setCustomUdhaarAmount(e.target.value)}
+              placeholder="Mark Udhaar (₹)"
+              className="w-full pl-8 pr-2.5 py-2 bg-amber-50/50 border border-amber-200 rounded-xl font-bold text-amber-900 focus:outline-none focus:border-amber-600"
+            />
+          </div>
+        </div>
       </div>
 
       {/* DIRECT VOICE / TEXT INPUT TO AI */}
@@ -107,7 +146,7 @@ export default function AIBillWindow({
             Talk or Type Directly to AI
           </span>
           <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-            Hindi / Hinglish / English
+            Natural Speech LLM NLU
           </span>
         </div>
 
@@ -116,7 +155,7 @@ export default function AIBillWindow({
             type="text"
             value={spokenText}
             onChange={(e) => setSpokenText(e.target.value)}
-            placeholder="e.g. 'Ravi took 2 Maggi packets' or 'Suresh paid ₹500'..."
+            placeholder="e.g. 'Ravi ji 20 packet Maggi, 2 Parle-G, 250 udhar'..."
             className="flex-1 min-h-[46px] px-3.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 text-xs shadow-inner focus:border-emerald-600 focus:bg-white focus:outline-none"
           />
           <button
@@ -219,7 +258,7 @@ export default function AIBillWindow({
               {generatedBill.sms_status && (
                 <span className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full flex items-center gap-1">
                   <MessageSquare className="w-3 h-3" />
-                  <span>SMS: {generatedBill.sms_status}</span>
+                  <span>Vendal SMS: {generatedBill.sms_status}</span>
                 </span>
               )}
               <span className="text-xs font-bold text-slate-500 font-mono">
@@ -273,8 +312,15 @@ export default function AIBillWindow({
             </div>
           )}
 
+          {generatedBill.discount_amount > 0 && (
+            <div className="flex items-center justify-between text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200">
+              <span>Discount Applied</span>
+              <span>- ₹{generatedBill.discount_amount}</span>
+            </div>
+          )}
+
           <div className="flex items-center justify-between border-t border-slate-200 pt-2 font-extrabold text-slate-900 text-sm">
-            <span>Grand Total (Kool Rashi)</span>
+            <span>Grand Total (Net Amount)</span>
             <span className="text-emerald-700 text-lg">₹{generatedBill.total_amount || 0}</span>
           </div>
 

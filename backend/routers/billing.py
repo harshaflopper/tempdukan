@@ -23,6 +23,8 @@ class ManualBillRequest(BaseModel):
     customer_phone: Optional[str] = None
     items: List[Dict[str, Any]]
     is_udhaar: bool = False
+    discount_amount: Optional[float] = None
+    custom_udhaar_amount: Optional[float] = None
     custom_paid_amount: Optional[float] = None
     send_sms: bool = True
 
@@ -46,6 +48,8 @@ async def create_bill_endpoint(
     customer_name: Optional[str] = Form(None),
     customer_phone: Optional[str] = Form(None),
     is_udhaar: bool = Form(False),
+    discount_amount: Optional[float] = Form(None),
+    custom_udhaar_amount: Optional[float] = Form(None),
     send_sms: bool = Form(True),
     text_prompt: Optional[str] = Form(None),
     items_json: Optional[str] = Form(None)
@@ -53,20 +57,20 @@ async def create_bill_endpoint(
     """
     1-Tap / 1-Voice / 1-Text AI Billing Engine:
     - Parses Image (Gemini Flash Vision) + Voice Note (Groq Whisper NLU) + Spoken/Typed Text Prompt.
-    - Extracts Customer Name, Mobile Phone, Products, Quantities, Units.
-    - Matches items against shop inventory & DEDUCTS STOCK.
+    - Matches items strictly against shop inventory catalog.
+    - Extracts Customer Name, Mobile Phone, Products, Quantities, Discounts & Udhaar amount.
+    - DEDUCTS STOCK from Supabase database.
     - Updates Customer Udhaar ledger if unpaid.
-    - Dispatches Wendal Digital Bill SMS.
-    - Returns digital receipt & spoken Hindi TTS response.
+    - Dispatches Vendal Digital Bill SMS.
     """
     image_bytes = await image.read() if image else None
     audio_bytes = await audio.read() if audio else None
 
     voice_data = {}
     if audio_bytes:
-        voice_data = await process_voice_audio(audio_bytes, filename=audio.filename or "voice.webm")
+        voice_data = await process_voice_audio(audio_bytes, filename=audio.filename or "voice.webm", shop_id=shop_id)
     elif text_prompt and text_prompt.strip():
-        voice_data = await parse_transcript_with_gemini(text_prompt.strip())
+        voice_data = await parse_transcript_with_gemini(text_prompt.strip(), shop_id=shop_id)
 
     # If action is UDHAAR_PAYMENT (e.g. "Ravi paid 500 rupees")
     if voice_data.get("action_type") == "UDHAAR_PAYMENT" and voice_data.get("udhaar_payment_amount"):
@@ -78,6 +82,8 @@ async def create_bill_endpoint(
     eff_cust_name = voice_data.get("customer_name") or customer_name
     eff_cust_phone = voice_data.get("customer_phone") or customer_phone
     eff_is_udhaar = is_udhaar or voice_data.get("is_udhaar", False)
+    eff_discount = discount_amount if discount_amount is not None else voice_data.get("discount_amount")
+    eff_udhaar_amount = custom_udhaar_amount if custom_udhaar_amount is not None else voice_data.get("udhaar_amount")
 
     # Determine Items
     items = []
@@ -113,6 +119,8 @@ async def create_bill_endpoint(
         customer_phone=eff_cust_phone,
         items=items,
         is_udhaar=eff_is_udhaar,
+        discount_amount=eff_discount,
+        custom_udhaar_amount=eff_udhaar_amount,
         image_bytes=image_bytes,
         send_sms=send_sms
     )
@@ -121,7 +129,7 @@ async def create_bill_endpoint(
 async def create_bill_direct_endpoint(req: ManualBillRequest):
     """
     Direct JSON API endpoint for generating bills from structured frontend forms.
-    Deducts stock automatically, updates customer Udhaar, and sends Wendal SMS.
+    Deducts stock automatically, updates customer Udhaar, and sends Vendal SMS.
     """
     return await create_smart_bill(
         shop_id=req.shop_id,
@@ -129,6 +137,8 @@ async def create_bill_direct_endpoint(req: ManualBillRequest):
         customer_phone=req.customer_phone,
         items=req.items,
         is_udhaar=req.is_udhaar,
+        discount_amount=req.discount_amount,
+        custom_udhaar_amount=req.custom_udhaar_amount,
         custom_paid_amount=req.custom_paid_amount,
         send_sms=req.send_sms
     )
@@ -137,7 +147,7 @@ async def create_bill_direct_endpoint(req: ManualBillRequest):
 async def udhaar_payment_endpoint(req: UdhaarPaymentRequest):
     """
     Records an Udhaar debt settlement payment when customer pays later.
-    Dispatches Wendal payment receipt SMS.
+    Dispatches Vendal payment receipt SMS.
     """
     return await record_udhaar_payment(
         shop_id=req.shop_id,
@@ -150,7 +160,7 @@ async def udhaar_payment_endpoint(req: UdhaarPaymentRequest):
 @router.post("/customers/send-reminder")
 async def send_reminder_endpoint(req: SendReminderRequest):
     """
-    Triggers Wendal SMS debt payment reminder to customer's mobile number.
+    Triggers Vendal SMS debt payment reminder to customer's mobile number.
     """
     supabase = get_supabase()
     if not supabase:
@@ -176,7 +186,7 @@ async def send_reminder_endpoint(req: SendReminderRequest):
         "customer": cust["name"],
         "phone": target_phone,
         "sms_status": sms_res.get("status"),
-        "ai_response": f"Reminder SMS sent to {cust['name']} ({target_phone}) via Wendal!"
+        "ai_response": f"Reminder SMS sent to {cust['name']} ({target_phone}) via Vendal!"
     }
 
 @router.get("/customers/{customer_id}/history")

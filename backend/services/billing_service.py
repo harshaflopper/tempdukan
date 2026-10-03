@@ -65,20 +65,21 @@ async def create_smart_bill(
     customer_phone: Optional[str] = None,
     items: List[Dict[str, Any]] = [],
     is_udhaar: bool = False,
+    discount_amount: Optional[float] = None,
+    custom_udhaar_amount: Optional[float] = None,
     custom_paid_amount: Optional[float] = None,
     image_bytes: Optional[bytes] = None,
     send_sms: bool = True
 ) -> Dict[str, Any]:
     """
-    Unified AI Billing, Stock Sync & Wendal SMS Event:
+    Unified AI Billing, Inventory Deduction & Vendal SMS Engine:
     1. Identifies/Creates Customer profile in ledger.
-    2. Matches items against shop inventory.
-    3. Calculates item prices & totals.
+    2. Matches items against shop inventory catalog.
+    3. Calculates item prices, applies discounts & udhaar.
     4. Automatically DEDUCTS stock from Supabase database.
     5. Saves Bill & Bill Items.
     6. Updates Customer Udhaar Balance & Logs Credit if unpaid.
-    7. Dispatches Digital Bill SMS via Wendal API if customer phone is present.
-    8. Returns digital receipt + Hindi audio response string.
+    7. Dispatches Digital Bill SMS via Vendal API if customer phone is present.
     """
     supabase = get_supabase()
     
@@ -134,22 +135,28 @@ async def create_smart_bill(
             "total_price": item_total
         })
 
-    total_bill_amount = round(total_bill_amount, 2)
+    gross_bill_amount = round(total_bill_amount, 2)
+    eff_discount = float(discount_amount or 0.0)
+    net_bill_amount = max(0.0, round(gross_bill_amount - eff_discount, 2))
 
     # Calculate Paid vs Udhaar Amount
-    if is_udhaar:
+    if custom_udhaar_amount is not None and float(custom_udhaar_amount) > 0:
+        udhaar_amount = min(net_bill_amount, float(custom_udhaar_amount))
+        paid_amount = round(net_bill_amount - udhaar_amount, 2)
+    elif is_udhaar:
         paid_amount = float(custom_paid_amount or 0.0)
+        udhaar_amount = max(0.0, round(net_bill_amount - paid_amount, 2))
     else:
-        paid_amount = float(custom_paid_amount if custom_paid_amount is not None else total_bill_amount)
+        paid_amount = float(custom_paid_amount if custom_paid_amount is not None else net_bill_amount)
+        udhaar_amount = max(0.0, round(net_bill_amount - paid_amount, 2))
 
-    udhaar_amount = max(0.0, total_bill_amount - paid_amount)
     payment_mode = "UDHAAR" if udhaar_amount > 0 else "CASH"
 
     bill_record = {
         "shop_id": shop_id,
         "customer_id": str(customer.get("id")) if customer else None,
         "customer_name": customer.get("name") if customer else (customer_name or "Cash Customer"),
-        "total_amount": total_bill_amount,
+        "total_amount": net_bill_amount,
         "paid_amount": paid_amount,
         "udhaar_amount": udhaar_amount,
         "payment_mode": payment_mode,
@@ -195,14 +202,14 @@ async def create_smart_bill(
         except Exception as e:
             print(f"Error updating customer udhaar: {e}")
 
-    # Step 5: Wendal SMS Automated Dispatch
+    # Step 5: Vendal SMS Automated Dispatch
     sms_res = None
     target_phone = customer_phone or (customer.get("phone") if customer else None)
     if send_sms and target_phone:
         sms_res = await send_bill_sms(
             to_phone=target_phone,
             customer_name=customer.get("name") if customer else (customer_name or "Customer"),
-            total_amount=total_bill_amount,
+            total_amount=net_bill_amount,
             udhaar_amount=udhaar_amount,
             total_udhaar_balance=new_udhaar_balance,
             items_summary=", ".join(items_summary_list[:3])
@@ -210,23 +217,26 @@ async def create_smart_bill(
 
     # Build Hindi Audio Guidance Response
     cust_str = f" for {customer['name']}" if customer else ""
-    sms_str = " (SMS sent via Wendal)" if sms_res and sms_res.get("success") else ""
+    disc_str = f" (₹{eff_discount} discount)" if eff_discount > 0 else ""
+    sms_str = " (SMS sent via Vendal)" if sms_res and sms_res.get("success") else ""
 
     if udhaar_amount > 0:
-        ai_msg = f"Bill ready{cust_str}! Total ₹{total_bill_amount}. ₹{udhaar_amount} Udhaar me add kar diya. Total Udhaar: ₹{new_udhaar_balance}.{sms_str}"
+        ai_msg = f"Bill ready{cust_str}! Total ₹{net_bill_amount}{disc_str}. ₹{udhaar_amount} Udhaar me add kar diya. Total Udhaar: ₹{new_udhaar_balance}.{sms_str}"
     else:
-        ai_msg = f"Bill ready{cust_str}! Total ₹{total_bill_amount} received in Cash.{sms_str}"
+        ai_msg = f"Bill ready{cust_str}! Total ₹{net_bill_amount}{disc_str} received in Cash.{sms_str}"
 
     return {
         "success": True,
         "bill_id": bill_id,
         "customer": customer,
         "customer_name": customer.get("name") if customer else (customer_name or "Cash Customer"),
-        "total_amount": total_bill_amount,
+        "total_amount": net_bill_amount,
+        "gross_amount": gross_bill_amount,
+        "discount_amount": eff_discount,
         "paid_amount": paid_amount,
         "udhaar_amount": udhaar_amount,
         "items": processed_items,
-        "sms_status": sms_res.get("status") if sms_res else "SKIPPED",
+        "sms_status": sms_res.get("status") if sms_res else ("NO_PHONE" if not target_phone else "SKIPPED"),
         "ai_response": ai_msg
     }
 
@@ -308,9 +318,7 @@ async def get_customer_history(shop_id: str, customer_id: str) -> Dict[str, Any]
         return {"bills": [], "logs": []}
 
     try:
-        # Fetch bills
         b_res = supabase.table("bills").select("*").eq("shop_id", shop_id).eq("customer_id", customer_id).order("created_at", desc=True).execute()
-        # Fetch Udhaar logs
         l_res = supabase.table("udhaar_logs").select("*").eq("shop_id", shop_id).eq("customer_id", customer_id).order("created_at", desc=True).execute()
 
         return {

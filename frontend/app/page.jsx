@@ -35,9 +35,11 @@ export default function Home() {
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
 
-  // Customer Profile & SMS State for Billing
+  // Customer Profile, Discount, Udhaar & SMS State for Billing
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [discountAmount, setDiscountAmount] = useState('');
+  const [customUdhaarAmount, setCustomUdhaarAmount] = useState('');
   const [sendSms, setSendSms] = useState(true);
 
   // Dukandar Quick Mode for Stock Add: 'RESTOCK' (Maal Aaya) | 'DAMAGE' (Kharab) | 'CORRECTION' (Ginti)
@@ -121,6 +123,8 @@ export default function Home() {
       formData.append('mode', 'BILL');
       if (customerName.trim()) formData.append('customer_name', customerName.trim());
       if (customerPhone.trim()) formData.append('customer_phone', customerPhone.trim());
+      if (discountAmount) formData.append('discount_amount', discountAmount);
+      if (customUdhaarAmount) formData.append('custom_udhaar_amount', customUdhaarAmount);
       formData.append('send_sms', sendSms ? 'true' : 'false');
 
       const res = await fetch(`${API_BASE}/create-bill`, {
@@ -265,6 +269,8 @@ export default function Home() {
       formData.append('mode', 'BILL');
       if (customerName.trim()) formData.append('customer_name', customerName.trim());
       if (customerPhone.trim()) formData.append('customer_phone', customerPhone.trim());
+      if (discountAmount) formData.append('discount_amount', discountAmount);
+      if (customUdhaarAmount) formData.append('custom_udhaar_amount', customUdhaarAmount);
       formData.append('send_sms', sendSms ? 'true' : 'false');
 
       const res = await fetch(`${API_BASE}/create-bill`, {
@@ -399,6 +405,10 @@ export default function Home() {
             setCustomerPhone={setCustomerPhone}
             sendSms={sendSms}
             setSendSms={setSendSms}
+            discountAmount={discountAmount}
+            setDiscountAmount={setDiscountAmount}
+            customUdhaarAmount={customUdhaarAmount}
+            setCustomUdhaarAmount={setCustomUdhaarAmount}
           />
         </main>
       )}
