@@ -14,6 +14,7 @@ class ProductConfirmRequest(BaseModel):
 class ProductUpdateRequest(BaseModel):
     shop_id: str = settings.DEFAULT_SHOP_ID
     add_quantity: Optional[float] = None
+    deduct_quantity: Optional[float] = None
     new_quantity: Optional[float] = None
     selling_price: Optional[float] = None
     expiry_date: Optional[str] = None
@@ -53,12 +54,13 @@ async def confirm_product_entry(req: ProductConfirmRequest):
 @router.patch("/products/{product_id}")
 async def update_product(product_id: str, req: ProductUpdateRequest):
     """
-    Updates stock quantity (add or set), selling price, and/or expiry date for an existing product.
+    Updates stock quantity (add, deduct, or set), selling price, and/or expiry date for an existing product.
     """
     updated = await update_product_stock(
         product_id=product_id,
         shop_id=req.shop_id,
         add_quantity=req.add_quantity,
+        deduct_quantity=req.deduct_quantity,
         new_quantity=req.new_quantity,
         selling_price=req.selling_price,
         expiry_date=req.expiry_date

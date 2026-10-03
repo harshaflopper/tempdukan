@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Search, Plus, Minus, Package, Trash2 } from 'lucide-react';
+import { Search, Plus, Minus, Package, AlertTriangle } from 'lucide-react';
 
-export default function InventoryCatalog({ products = [], onUpdateStock, onDeleteProduct }) {
+export default function InventoryCatalog({ products = [], onUpdateStock }) {
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredProducts = products.filter(p =>
@@ -18,8 +18,8 @@ export default function InventoryCatalog({ products = [], onUpdateStock, onDelet
           <Package className="w-5 h-5 text-emerald-600" />
           <h2>Shop Inventory Catalog</h2>
         </div>
-        <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full">
-          {products.length} Items
+        <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full font-extrabold">
+          {products.length} Items Sync Live
         </span>
       </div>
 
@@ -29,7 +29,7 @@ export default function InventoryCatalog({ products = [], onUpdateStock, onDelet
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search by product name, barcode..."
+          placeholder="Search items by name..."
           className="w-full min-h-[44px] pl-10 pr-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:border-emerald-600 focus:bg-white focus:outline-none"
         />
       </div>
@@ -37,48 +37,65 @@ export default function InventoryCatalog({ products = [], onUpdateStock, onDelet
       <div className="flex flex-col gap-2.5">
         {filteredProducts.length === 0 ? (
           <div className="py-8 text-center text-slate-400 text-sm italic">
-            No items in catalog yet. Scan a product using the AI Camera tab!
+            No items in shop inventory catalog yet. Take a snap in the AI Camera tab!
           </div>
         ) : (
-          filteredProducts.map((p, idx) => (
-            <div key={p.id || idx} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl">
-              <div className="flex flex-col gap-0.5">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-bold text-sm text-slate-900">{p.name}</span>
-                  {p.expiry_date && (
-                    <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md">
-                      Exp: {p.expiry_date}
+          filteredProducts.map((p, idx) => {
+            const isLowStock = parseFloat(p.quantity) <= 3;
+            return (
+              <div key={p.id || idx} className={`flex items-center justify-between p-3.5 bg-slate-50 border rounded-xl transition-all ${
+                isLowStock ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200'
+              }`}>
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-sm text-slate-900">{p.name}</span>
+                    {isLowStock && (
+                      <span className="text-[10px] font-extrabold text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-md flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" />
+                        Low Stock ({p.quantity})
+                      </span>
+                    )}
+                    {p.expiry_date && (
+                      <span className="text-[10px] font-bold text-slate-700 bg-slate-200 px-2 py-0.5 rounded-md">
+                        Exp: {p.expiry_date}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-xs text-slate-500 font-medium">
+                    Stock: <strong className="text-slate-900">{p.quantity} {p.unit || 'units'}</strong> | Price: <strong className="text-emerald-700">₹{p.selling_price}</strong>
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
+                    {/* Quick Sale (-1) */}
+                    <button
+                      type="button"
+                      title="Quick Bikri (-1)"
+                      onClick={() => onUpdateStock && onUpdateStock(p.id, Math.max(0, parseFloat(p.quantity) - 1))}
+                      className="w-8 h-8 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 font-extrabold flex items-center justify-center text-sm border border-red-200"
+                    >
+                      -1
+                    </button>
+
+                    <span className="text-xs font-extrabold text-slate-900 px-1 text-center min-w-[24px]">
+                      {p.quantity}
                     </span>
-                  )}
-                </div>
-                <span className="text-xs text-slate-500 font-medium">
-                  Barcode: <code className="font-mono text-slate-700">{p.barcode || 'N/A'}</code>
-                </span>
-              </div>
 
-              <div className="flex items-center gap-3">
-                <span className="font-heading font-extrabold text-base text-emerald-700">₹{p.selling_price}</span>
-
-                <div className="flex items-center gap-1.5 bg-white p-1 rounded-lg border border-slate-200">
-                  <button
-                    type="button"
-                    onClick={() => onUpdateStock && onUpdateStock(p.id, Math.max(0, p.quantity - 1))}
-                    className="w-7 h-7 rounded bg-slate-100 flex items-center justify-center font-bold text-slate-700"
-                  >
-                    -
-                  </button>
-                  <span className="text-xs font-bold text-slate-900 w-6 text-center">{p.quantity}</span>
-                  <button
-                    type="button"
-                    onClick={() => onUpdateStock && onUpdateStock(p.id, p.quantity + 1)}
-                    className="w-7 h-7 rounded bg-slate-100 flex items-center justify-center font-bold text-slate-700"
-                  >
-                    +
-                  </button>
+                    {/* Quick Restock (+1) */}
+                    <button
+                      type="button"
+                      title="Quick Restock (+1)"
+                      onClick={() => onUpdateStock && onUpdateStock(p.id, parseFloat(p.quantity) + 1)}
+                      className="w-8 h-8 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-extrabold flex items-center justify-center text-sm border border-emerald-200"
+                    >
+                      +1
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>

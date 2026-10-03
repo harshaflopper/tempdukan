@@ -32,6 +32,9 @@ export default function Home() {
   const [shopId] = useState('SHOP001');
   const [products, setProducts] = useState([]);
 
+  // Dukandar Quick Mode: 'SALE' (Bikri) | 'RESTOCK' (Maal Aaya) | 'DAMAGE' (Kharab) | 'CORRECTION' (Ginti)
+  const [quickMode, setQuickMode] = useState('SALE');
+
   // Workflow Steps: 'camera' -> 'snapped' -> 'analyzing' -> 'results'
   const [workflowStep, setWorkflowStep] = useState('camera');
   const [recordedAudioBlob, setRecordedAudioBlob] = useState(null);
@@ -51,6 +54,7 @@ export default function Home() {
     quantity: 1,
     unit: 'packet',
     expiry_date: '',
+    action_type: 'SALE',
   });
 
   const videoRef = useRef(null);
@@ -102,7 +106,7 @@ export default function Home() {
     }, 'image/jpeg', 0.90);
   };
 
-  // STEP 2: PROCESS & ANALYZE PRODUCT WITH AI (GEMINI 2.5 FLASH + SUPABASE DB LOOKUP)
+  // STEP 2: PROCESS & ANALYZE PRODUCT WITH AI
   const handleAnalyzeProduct = async () => {
     setWorkflowStep('analyzing');
     setSuccessToast(null);
@@ -112,6 +116,7 @@ export default function Home() {
       if (photoBlob) formData.append('image', photoBlob, 'photo.jpg');
       if (recordedAudioBlob) formData.append('audio', recordedAudioBlob, 'voice.webm');
       formData.append('shop_id', shopId);
+      formData.append('mode', quickMode);
 
       const res = await fetch(`${API_BASE}/onboard`, {
         method: 'POST',
@@ -121,34 +126,24 @@ export default function Home() {
       if (res.ok) {
         const data = await res.json();
 
-        // =========================================================================
-        // CASE A: VOICE NOTE ATTACHED -> DIRECT DB SAVE & INSTANT CAMERA RESET (NO CARD!)
-        // =========================================================================
+        // CASE A: VOICE NOTE ATTACHED -> DIRECT DB SAVE & INSTANT RESET
         if (recordedAudioBlob || data.case === 2) {
-          const toastMsg = data.ai_response || `Done! Saved product directly to shop inventory.`;
+          const toastMsg = data.ai_response || `Done! Stock updated automatically.`;
           setSuccessToast(toastMsg);
           speakAIVoicePrompt(toastMsg);
 
-          // Refresh live Supabase inventory catalog immediately!
           await fetchInventory();
-
-          // Reset to camera view for instant next snap (ZERO CONFIRMATION FORM!)
           setWorkflowStep('camera');
           setCapturedPhotoUrl(null);
           setPhotoBlob(null);
           setRecordedAudioBlob(null);
           setAiResult(null);
         } else {
-          // =========================================================================
-          // CASE B: PHOTO ONLY -> SHOW PRE-FILLED CONFIRMATION CARD
-          // =========================================================================
+          // CASE B: PHOTO ONLY -> SHOW CONFIRMATION CARD
           setAiResult(data);
+          if (data.ai_response) speakAIVoicePrompt(data.ai_response);
 
-          // Speech Synthesis Voice Output
-          if (data.ai_response) {
-            speakAIVoicePrompt(data.ai_response);
-          }
-
+          const action = data.action_type || quickMode;
           if (data.is_existing && data.existing_product) {
             const ep = data.existing_product;
             const prefilledPrice = parseFloat(ep.selling_price) || parseFloat(data.printed_mrp) || 10.0;
@@ -161,6 +156,7 @@ export default function Home() {
               selling_price: prefilledPrice,
               unit: ep.unit || 'packet',
               expiry_date: ep.expiry_date || data.expiry_date || '',
+              action_type: action,
             });
           } else {
             const prodName = data.product_name || 'Recognized Item';
@@ -169,9 +165,10 @@ export default function Home() {
               is_existing: false,
               name: prodName,
               selling_price: price,
-              quantity: 1,
+              quantity: action === 'SALE' ? 0 : 1,
               unit: 'packet',
               expiry_date: data.expiry_date || '',
+              action_type: action,
             });
           }
           setWorkflowStep('results');
@@ -179,7 +176,7 @@ export default function Home() {
       }
     } catch (err) {
       if (recordedAudioBlob) {
-        const toastMsg = "Done! Saved product directly to shop inventory.";
+        const toastMsg = "Done! Saved transaction to shop inventory.";
         setSuccessToast(toastMsg);
         speakAIVoicePrompt(toastMsg);
         await fetchInventory();
@@ -188,7 +185,7 @@ export default function Home() {
         setPhotoBlob(null);
         setRecordedAudioBlob(null);
       } else {
-        const fallbackMsg = "Recognized product! Enter quantity and selling price to save.";
+        const fallbackMsg = "Recognized product! Confirm quantity to update inventory.";
         speakAIVoicePrompt(fallbackMsg);
         setAiResult({
           status: 'PHOTO_ONLY_NEW_PRODUCT',
@@ -202,7 +199,8 @@ export default function Home() {
           selling_price: 20.0,
           quantity: 1,
           unit: 'box',
-          expiry_date: 'Dec 2026'
+          expiry_date: 'Dec 2026',
+          action_type: quickMode,
         });
         setWorkflowStep('results');
       }
@@ -215,24 +213,30 @@ export default function Home() {
 
     try {
       if (manualForm.is_existing && manualForm.id) {
-        // UPDATE REPEAT PRODUCT STOCK IN SUPABASE
+        let payload = { shop_id: shopId };
+        const action = manualForm.action_type || quickMode;
+
+        if (action === 'SALE' || action === 'DAMAGE') {
+          payload.deduct_quantity = parseFloat(manualForm.add_quantity) || 1;
+        } else if (action === 'CORRECTION') {
+          payload.new_quantity = parseFloat(manualForm.add_quantity) || 0;
+        } else {
+          payload.add_quantity = parseFloat(manualForm.add_quantity) || 1;
+        }
+
+        if (manualForm.selling_price) payload.selling_price = parseFloat(manualForm.selling_price);
+        if (manualForm.expiry_date) payload.expiry_date = manualForm.expiry_date;
+
         await fetch(`${API_BASE}/products/${manualForm.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            shop_id: shopId,
-            add_quantity: parseFloat(manualForm.add_quantity) || 0,
-            selling_price: parseFloat(manualForm.selling_price) || 0,
-            expiry_date: manualForm.expiry_date || '',
-          }),
+          body: JSON.stringify(payload),
         });
 
-        const newTotal = (manualForm.current_quantity || 0) + (parseFloat(manualForm.add_quantity) || 0);
-        const toastText = `Done! Updated stock for '${manualForm.name}' to ${newTotal} ${manualForm.unit}s.`;
+        const toastText = `Done! Updated inventory for '${manualForm.name}'.`;
         setSuccessToast(toastText);
         speakAIVoicePrompt(toastText);
       } else {
-        // SAVE NEW PRODUCT TO SUPABASE
         const newProd = {
           shop_id: shopId,
           ...manualForm,
@@ -242,7 +246,7 @@ export default function Home() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ shop_id: shopId, product: newProd }),
         });
-        const toastText = `Done! Saved '${manualForm.name}' (₹${manualForm.selling_price}) to shop inventory!`;
+        const toastText = `Done! Saved '${manualForm.name}' to shop inventory!`;
         setSuccessToast(toastText);
         speakAIVoicePrompt(toastText);
       }
@@ -279,6 +283,66 @@ export default function Home() {
 
       {activeTab === 'onboard' && (
         <main className="flex flex-col gap-4">
+          {/* DUKANDAR QUICK ACTION SELECTOR BAR */}
+          <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-1.5">
+            <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider px-1">
+              Select Shop Action (Dukaan Action)
+            </span>
+            <div className="grid grid-cols-4 gap-1.5">
+              <button
+                type="button"
+                onClick={() => setQuickMode('SALE')}
+                className={`py-2 px-1 rounded-xl flex flex-col items-center gap-1 transition-all ${
+                  quickMode === 'SALE'
+                    ? 'bg-emerald-600 text-white shadow-emerald-glow font-extrabold'
+                    : 'bg-slate-50 text-slate-700 hover:bg-slate-100 font-bold'
+                }`}
+              >
+                <span className="text-sm">🛒</span>
+                <span className="text-xs">Bikri (Sell)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setQuickMode('RESTOCK')}
+                className={`py-2 px-1 rounded-xl flex flex-col items-center gap-1 transition-all ${
+                  quickMode === 'RESTOCK'
+                    ? 'bg-blue-600 text-white shadow-md font-extrabold'
+                    : 'bg-slate-50 text-slate-700 hover:bg-slate-100 font-bold'
+                }`}
+              >
+                <span className="text-sm">📦</span>
+                <span className="text-xs">Maal Aaya</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setQuickMode('DAMAGE')}
+                className={`py-2 px-1 rounded-xl flex flex-col items-center gap-1 transition-all ${
+                  quickMode === 'DAMAGE'
+                    ? 'bg-red-600 text-white shadow-md font-extrabold'
+                    : 'bg-slate-50 text-slate-700 hover:bg-slate-100 font-bold'
+                }`}
+              >
+                <span className="text-sm">⚠️</span>
+                <span className="text-xs">Kharab</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setQuickMode('CORRECTION')}
+                className={`py-2 px-1 rounded-xl flex flex-col items-center gap-1 transition-all ${
+                  quickMode === 'CORRECTION'
+                    ? 'bg-amber-600 text-white shadow-md font-extrabold'
+                    : 'bg-slate-50 text-slate-700 hover:bg-slate-100 font-bold'
+                }`}
+              >
+                <span className="text-sm">🔢</span>
+                <span className="text-xs">Ginti</span>
+              </button>
+            </div>
+          </div>
+
           {/* STEP 1: CAMERA VIEWPORT */}
           {workflowStep === 'camera' && (
             <div className="flex flex-col gap-3">
@@ -287,10 +351,20 @@ export default function Home() {
               <button
                 type="button"
                 onClick={handleTakeSnap}
-                className="w-full min-h-[58px] bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 text-white rounded-2xl font-heading font-extrabold text-base flex items-center justify-center gap-3 shadow-emerald-glow transition-all active:scale-[0.99]"
+                className={`w-full min-h-[58px] text-white rounded-2xl font-heading font-extrabold text-base flex items-center justify-center gap-3 shadow-lg transition-all active:scale-[0.99] ${
+                  quickMode === 'SALE' ? 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 shadow-emerald-glow' :
+                  quickMode === 'RESTOCK' ? 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600' :
+                  quickMode === 'DAMAGE' ? 'bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600' :
+                  'bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600'
+                }`}
               >
-                <Camera className="w-6 h-6 text-emerald-100" />
-                <span>Take Product Photo Snap</span>
+                <Camera className="w-6 h-6 text-white" />
+                <span>
+                  {quickMode === 'SALE' ? 'Snap Photo for Bikri (Sale)' :
+                   quickMode === 'RESTOCK' ? 'Snap Photo for Restock (Maal Aaya)' :
+                   quickMode === 'DAMAGE' ? 'Snap Photo for Kharab (Damage)' :
+                   'Snap Photo for Stock Ginti (Count Audit)'}
+                </span>
               </button>
             </div>
           )}
@@ -330,12 +404,12 @@ export default function Home() {
                 {workflowStep === 'analyzing' ? (
                   <>
                     <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Analyzing with Gemini 2.5 AI & Checking Inventory...</span>
+                    <span>Analyzing with Gemini 2.5 AI & Updating Inventory...</span>
                   </>
                 ) : (
                   <>
                     <Sparkles className="w-5 h-5 text-emerald-100" />
-                    <span>{recordedAudioBlob ? 'Process Photo + Voice Note' : 'Analyze Product Now'}</span>
+                    <span>{recordedAudioBlob ? 'Process Photo + Voice Note' : 'Analyze & Sync Inventory Now'}</span>
                   </>
                 )}
               </button>
@@ -389,7 +463,7 @@ export default function Home() {
                     Matched Item in Inventory: '{manualForm.name}'
                   </span>
                   <span className="text-xs text-amber-800 font-medium">
-                    Current Stock: <strong>{manualForm.current_quantity} {manualForm.unit}s</strong> | Selling Price: <strong>₹{manualForm.selling_price}</strong> {manualForm.expiry_date && `| Exp: ${manualForm.expiry_date}`}
+                    Current Stock: <strong>{manualForm.current_quantity} {manualForm.unit}s</strong> | Selling Price: <strong>₹{manualForm.selling_price}</strong>
                   </span>
                 </div>
               )}
@@ -411,9 +485,15 @@ export default function Home() {
 
                 {manualForm.is_existing ? (
                   <div className="flex flex-col gap-2">
-                    <label className="text-xs font-semibold text-slate-500">Quick Stock Top-Up (Add Units)</label>
+                    <label className="text-xs font-semibold text-slate-500">
+                      {manualForm.action_type === 'SALE' ? 'Units Sold (Deduct Stock)' :
+                       manualForm.action_type === 'DAMAGE' ? 'Damaged Units (Deduct Stock)' :
+                       manualForm.action_type === 'CORRECTION' ? 'Physical Stock Count (Set Stock)' :
+                       'Restock Units (Add Stock)'}
+                    </label>
+
                     <div className="grid grid-cols-4 gap-2">
-                      {[1, 5, 10, 20].map((num) => (
+                      {[1, 2, 5, 10].map((num) => (
                         <button
                           key={num}
                           type="button"
@@ -424,25 +504,26 @@ export default function Home() {
                               : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                           }`}
                         >
-                          +{num}
+                          {manualForm.action_type === 'SALE' || manualForm.action_type === 'DAMAGE' ? `-${num}` : `+${num}`}
                         </button>
                       ))}
                     </div>
 
                     <div className="grid grid-cols-3 gap-2 mt-1">
                       <div className="flex flex-col gap-1">
-                        <label className="text-xs font-semibold text-slate-500">Add Stock Qty</label>
+                        <label className="text-xs font-semibold text-slate-500">Quantity</label>
                         <input
                           type="number"
                           required
-                          min="1"
+                          step="0.01"
+                          min="0.01"
                           value={manualForm.add_quantity}
                           onChange={(e) => setManualForm({ ...manualForm, add_quantity: parseFloat(e.target.value) || 1 })}
                           className="w-full min-h-[44px] px-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900"
                         />
                       </div>
                       <div className="flex flex-col gap-1">
-                        <label className="text-xs font-semibold text-slate-500">Selling Price (₹)</label>
+                        <label className="text-xs font-semibold text-slate-500">Price (₹)</label>
                         <input
                           type="number"
                           step="0.5"
@@ -479,12 +560,13 @@ export default function Home() {
                         />
                       </div>
                       <div className="flex flex-col gap-1">
-                        <label className="text-xs font-semibold text-slate-500">Stock Quantity</label>
+                        <label className="text-xs font-semibold text-slate-500">Initial Stock Quantity</label>
                         <input
                           type="number"
                           required
+                          step="0.01"
                           value={manualForm.quantity}
-                          onChange={(e) => setManualForm({ ...manualForm, quantity: parseFloat(e.target.value) || 1 })}
+                          onChange={(e) => setManualForm({ ...manualForm, quantity: parseFloat(e.target.value) || 0 })}
                           className="w-full min-h-[44px] px-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900"
                         />
                       </div>
@@ -509,7 +591,7 @@ export default function Home() {
                     className="w-full min-h-[52px] bg-emerald-600 hover:bg-emerald-700 text-white font-heading font-extrabold rounded-xl flex items-center justify-center gap-2 shadow-emerald-glow text-base"
                   >
                     <Check className="w-5 h-5" />
-                    <span>{manualForm.is_existing ? 'Update Existing Stock & Expiry' : 'Save to Shop Inventory'}</span>
+                    <span>Confirm & Sync Inventory</span>
                   </button>
 
                   <button

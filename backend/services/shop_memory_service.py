@@ -119,12 +119,13 @@ async def update_product_stock(
     product_id: str,
     shop_id: str,
     add_quantity: Optional[float] = None,
+    deduct_quantity: Optional[float] = None,
     new_quantity: Optional[float] = None,
     selling_price: Optional[float] = None,
     expiry_date: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     """
-    Updates stock quantity, selling price, and/or expiry date for an existing product in Supabase.
+    Updates stock quantity (add, deduct, or set), selling price, and/or expiry date for an existing product in Supabase.
     """
     supabase = get_supabase()
     if not supabase:
@@ -141,6 +142,8 @@ async def update_product_stock(
 
         if new_quantity is not None:
             final_qty = float(new_quantity)
+        elif deduct_quantity is not None:
+            final_qty = max(0.0, current_qty - float(deduct_quantity))
         elif add_quantity is not None:
             final_qty = current_qty + float(add_quantity)
         else:
