@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import CameraScanner from './CameraScanner';
 import VoiceRecorder from './VoiceRecorder';
-import { Sparkles, Camera, Receipt, Volume2, CheckCircle2, Check, ArrowRight } from 'lucide-react';
+import { Sparkles, Camera, Receipt, Volume2, CheckCircle2, Check, Send, User, Phone, MessageSquare } from 'lucide-react';
 
 export default function AIBillWindow({
   videoRef,
@@ -20,7 +20,13 @@ export default function AIBillWindow({
   setGeneratedBill,
   speakAIVoicePrompt,
   onTextBillSubmit,
-  isSubmitting
+  isSubmitting,
+  customerName,
+  setCustomerName,
+  customerPhone,
+  setCustomerPhone,
+  sendSms,
+  setSendSms
 }) {
   const [spokenText, setSpokenText] = useState('');
 
@@ -37,13 +43,61 @@ export default function AIBillWindow({
     <div className="flex flex-col gap-4 animate-in fade-in">
       {/* Window Header Banner */}
       <div className="bg-gradient-to-r from-emerald-800 to-emerald-950 text-white p-4 rounded-2xl border border-emerald-700 shadow-md flex flex-col gap-1">
-        <div className="flex items-center gap-2 font-heading font-extrabold text-base">
-          <Receipt className="w-5 h-5 text-emerald-400" />
-          <span>AI Bill & Voice Window</span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 font-heading font-extrabold text-base">
+            <Receipt className="w-5 h-5 text-emerald-400" />
+            <span>AI Bill & Wendal SMS Window</span>
+          </div>
+          <span className="text-[10px] font-extrabold text-emerald-300 bg-emerald-900/60 px-2 py-0.5 rounded-full border border-emerald-700">
+            Wendal Automated SMS
+          </span>
         </div>
         <p className="text-xs text-emerald-200 font-medium">
-          Talk directly to AI or snap product photo to automatically generate customer bills & sync inventory.
+          Talk directly to AI or snap product photo to automatically generate customer bills & send Wendal SMS receipts.
         </p>
+      </div>
+
+      {/* CUSTOMER PROFILE & SMS TOGGLE SELECTOR */}
+      <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-2.5 text-xs">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+          <span className="font-extrabold text-slate-700 uppercase tracking-wider">
+            Customer Profile (Optional)
+          </span>
+          <label className="flex items-center gap-1.5 cursor-pointer font-bold text-emerald-800 select-none">
+            <input
+              type="checkbox"
+              checked={sendSms}
+              onChange={(e) => setSendSms(e.target.checked)}
+              className="w-3.5 h-3.5 accent-emerald-600 rounded"
+            />
+            <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Send Wendal SMS</span>
+          </label>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div className="relative">
+            <User className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
+            <input
+              type="text"
+              value={customerName || ''}
+              onChange={(e) => setCustomerName && setCustomerName(e.target.value)}
+              placeholder="Customer Name (e.g. Ravi)"
+              className="w-full pl-8 pr-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none focus:border-emerald-600"
+            />
+          </div>
+
+          <div className="relative">
+            <Phone className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
+            <input
+              type="tel"
+              value={customerPhone || ''}
+              onChange={(e) => setCustomerPhone && setCustomerPhone(e.target.value)}
+              placeholder="Mobile (e.g. 9876543210)"
+              className="w-full pl-8 pr-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none focus:border-emerald-600"
+            />
+          </div>
+        </div>
       </div>
 
       {/* DIRECT VOICE / TEXT INPUT TO AI */}
@@ -161,21 +215,35 @@ export default function AIBillWindow({
               <Receipt className="w-5 h-5 text-emerald-600" />
               <span>Kirana Digital Receipt</span>
             </div>
-            <span className="text-xs font-bold text-slate-500 font-mono">
-              {generatedBill.bill_id || 'BILL-NEW'}
-            </span>
+            <div className="flex items-center gap-2">
+              {generatedBill.sms_status && (
+                <span className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <MessageSquare className="w-3 h-3" />
+                  <span>SMS: {generatedBill.sms_status}</span>
+                </span>
+              )}
+              <span className="text-xs font-bold text-slate-500 font-mono">
+                {generatedBill.bill_id || 'BILL-NEW'}
+              </span>
+            </div>
           </div>
 
-          {generatedBill.customer && (
+          {(generatedBill.customer || generatedBill.customer_name) && (
             <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
               <div>
-                <span className="font-extrabold text-slate-800">{generatedBill.customer.name}</span>
-                {generatedBill.customer.phone && <span className="text-slate-500 ml-2">({generatedBill.customer.phone})</span>}
+                <span className="font-extrabold text-slate-800">
+                  {generatedBill.customer?.name || generatedBill.customer_name}
+                </span>
+                {(generatedBill.customer?.phone || customerPhone) && (
+                  <span className="text-slate-500 ml-2">
+                    ({generatedBill.customer?.phone || customerPhone})
+                  </span>
+                )}
               </div>
               <div className="font-bold text-emerald-700">
-                {generatedBill.is_udhaar ? (
+                {generatedBill.udhaar_amount > 0 ? (
                   <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                    Udhaar Credit: ₹{generatedBill.customer.udhaar_balance}
+                    Udhaar Added: ₹{generatedBill.udhaar_amount}
                   </span>
                 ) : (
                   <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
@@ -196,10 +264,10 @@ export default function AIBillWindow({
               </div>
               {generatedBill.items.map((item, idx) => (
                 <div key={idx} className="grid grid-cols-12 font-medium text-slate-800 py-1 border-b border-slate-50">
-                  <span className="col-span-6 font-bold truncate">{item.name}</span>
+                  <span className="col-span-6 font-bold truncate">{item.product_name || item.name}</span>
                   <span className="col-span-2 text-center text-slate-600">{item.quantity} {item.unit || 'pkt'}</span>
-                  <span className="col-span-2 text-right text-slate-600">₹{item.rate}</span>
-                  <span className="col-span-2 text-right font-extrabold text-slate-900">₹{item.item_total}</span>
+                  <span className="col-span-2 text-right text-slate-600">₹{item.unit_price || item.rate || 0}</span>
+                  <span className="col-span-2 text-right font-extrabold text-slate-900">₹{item.total_price || item.item_total || 0}</span>
                 </div>
               ))}
             </div>

@@ -4,7 +4,14 @@ from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
 from config import settings
 from db import get_supabase
-from services.billing_service import create_smart_bill, record_udhaar_payment, get_or_create_customer
+from services.billing_service import (
+    create_smart_bill,
+    record_udhaar_payment,
+    get_or_create_customer,
+    get_customer_history,
+    get_udhaar_summary
+)
+from services.sms_service import send_udhaar_reminder_sms
 from services.voice_service import process_voice_audio, parse_transcript_with_gemini
 from services.vision_service import extract_label_from_image
 
@@ -17,12 +24,19 @@ class ManualBillRequest(BaseModel):
     items: List[Dict[str, Any]]
     is_udhaar: bool = False
     custom_paid_amount: Optional[float] = None
+    send_sms: bool = True
 
 class UdhaarPaymentRequest(BaseModel):
     shop_id: str = settings.DEFAULT_SHOP_ID
     customer_name: Optional[str] = None
     customer_id: Optional[str] = None
     amount: float
+    send_sms: bool = True
+
+class SendReminderRequest(BaseModel):
+    shop_id: str = settings.DEFAULT_SHOP_ID
+    customer_id: str
+    phone: Optional[str] = None
 
 @router.post("/create-bill")
 async def create_bill_endpoint(
@@ -32,15 +46,17 @@ async def create_bill_endpoint(
     customer_name: Optional[str] = Form(None),
     customer_phone: Optional[str] = Form(None),
     is_udhaar: bool = Form(False),
+    send_sms: bool = Form(True),
     text_prompt: Optional[str] = Form(None),
     items_json: Optional[str] = Form(None)
 ):
     """
     1-Tap / 1-Voice / 1-Text AI Billing Engine:
     - Parses Image (Gemini Flash Vision) + Voice Note (Groq Whisper NLU) + Spoken/Typed Text Prompt.
-    - Extracts Customer Name, Products, Quantities, Units.
+    - Extracts Customer Name, Mobile Phone, Products, Quantities, Units.
     - Matches items against shop inventory & DEDUCTS STOCK.
     - Updates Customer Udhaar ledger if unpaid.
+    - Dispatches Wendal Digital Bill SMS.
     - Returns digital receipt & spoken Hindi TTS response.
     """
     image_bytes = await image.read() if image else None
@@ -56,9 +72,9 @@ async def create_bill_endpoint(
     if voice_data.get("action_type") == "UDHAAR_PAYMENT" and voice_data.get("udhaar_payment_amount"):
         cust_name = voice_data.get("customer_name") or customer_name
         amount = voice_data.get("udhaar_payment_amount")
-        return await record_udhaar_payment(shop_id=shop_id, customer_name=cust_name, amount=amount)
+        return await record_udhaar_payment(shop_id=shop_id, customer_name=cust_name, amount=amount, send_sms=send_sms)
 
-    # Determine Customer
+    # Determine Customer Profile Details
     eff_cust_name = voice_data.get("customer_name") or customer_name
     eff_cust_phone = voice_data.get("customer_phone") or customer_phone
     eff_is_udhaar = is_udhaar or voice_data.get("is_udhaar", False)
@@ -97,14 +113,15 @@ async def create_bill_endpoint(
         customer_phone=eff_cust_phone,
         items=items,
         is_udhaar=eff_is_udhaar,
-        image_bytes=image_bytes
+        image_bytes=image_bytes,
+        send_sms=send_sms
     )
 
 @router.post("/create-bill-direct")
 async def create_bill_direct_endpoint(req: ManualBillRequest):
     """
     Direct JSON API endpoint for generating bills from structured frontend forms.
-    Deducts stock automatically and updates customer Udhaar.
+    Deducts stock automatically, updates customer Udhaar, and sends Wendal SMS.
     """
     return await create_smart_bill(
         shop_id=req.shop_id,
@@ -112,21 +129,69 @@ async def create_bill_direct_endpoint(req: ManualBillRequest):
         customer_phone=req.customer_phone,
         items=req.items,
         is_udhaar=req.is_udhaar,
-        custom_paid_amount=req.custom_paid_amount
+        custom_paid_amount=req.custom_paid_amount,
+        send_sms=req.send_sms
     )
 
 @router.post("/udhaar/payment")
 async def udhaar_payment_endpoint(req: UdhaarPaymentRequest):
     """
     Records an Udhaar debt settlement payment when customer pays later.
-    e.g. "Ravi paid ₹500" -> Balance reduces by ₹500.
+    Dispatches Wendal payment receipt SMS.
     """
     return await record_udhaar_payment(
         shop_id=req.shop_id,
         customer_name=req.customer_name,
         customer_id=req.customer_id,
-        amount=req.amount
+        amount=req.amount,
+        send_sms=req.send_sms
     )
+
+@router.post("/customers/send-reminder")
+async def send_reminder_endpoint(req: SendReminderRequest):
+    """
+    Triggers Wendal SMS debt payment reminder to customer's mobile number.
+    """
+    supabase = get_supabase()
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database client unavailable")
+
+    res = supabase.table("customers").select("*").eq("id", req.customer_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=444, detail="Customer not found")
+
+    cust = res.data[0]
+    target_phone = req.phone or cust.get("phone")
+    if not target_phone:
+        raise HTTPException(status_code=400, detail="Customer phone number is missing")
+
+    sms_res = await send_udhaar_reminder_sms(
+        to_phone=target_phone,
+        customer_name=cust["name"],
+        udhaar_balance=float(cust.get("udhaar_balance", 0))
+    )
+
+    return {
+        "success": True,
+        "customer": cust["name"],
+        "phone": target_phone,
+        "sms_status": sms_res.get("status"),
+        "ai_response": f"Reminder SMS sent to {cust['name']} ({target_phone}) via Wendal!"
+    }
+
+@router.get("/customers/{customer_id}/history")
+async def get_customer_history_endpoint(customer_id: str, shop_id: str = settings.DEFAULT_SHOP_ID):
+    """
+    Fetches full transaction & bill history for a customer profile.
+    """
+    return await get_customer_history(shop_id=shop_id, customer_id=customer_id)
+
+@router.get("/udhaar/summary")
+async def get_udhaar_summary_endpoint(shop_id: str = settings.DEFAULT_SHOP_ID):
+    """
+    Overview summary of all pending Udhaar debt.
+    """
+    return await get_udhaar_summary(shop_id=shop_id)
 
 @router.get("/customers")
 async def get_customers(shop_id: str = settings.DEFAULT_SHOP_ID):

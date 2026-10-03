@@ -35,6 +35,11 @@ export default function Home() {
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
 
+  // Customer Profile & SMS State for Billing
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [sendSms, setSendSms] = useState(true);
+
   // Dukandar Quick Mode for Stock Add: 'RESTOCK' (Maal Aaya) | 'DAMAGE' (Kharab) | 'CORRECTION' (Ginti)
   const [quickMode, setQuickMode] = useState('RESTOCK');
 
@@ -114,6 +119,9 @@ export default function Home() {
       formData.append('text_prompt', text.trim());
       formData.append('shop_id', shopId);
       formData.append('mode', 'BILL');
+      if (customerName.trim()) formData.append('customer_name', customerName.trim());
+      if (customerPhone.trim()) formData.append('customer_phone', customerPhone.trim());
+      formData.append('send_sms', sendSms ? 'true' : 'false');
 
       const res = await fetch(`${API_BASE}/create-bill`, {
         method: 'POST',
@@ -255,6 +263,9 @@ export default function Home() {
       if (recordedAudioBlob) formData.append('audio', recordedAudioBlob, 'voice.webm');
       formData.append('shop_id', shopId);
       formData.append('mode', 'BILL');
+      if (customerName.trim()) formData.append('customer_name', customerName.trim());
+      if (customerPhone.trim()) formData.append('customer_phone', customerPhone.trim());
+      formData.append('send_sms', sendSms ? 'true' : 'false');
 
       const res = await fetch(`${API_BASE}/create-bill`, {
         method: 'POST',
@@ -305,6 +316,7 @@ export default function Home() {
           customer_name: customer?.name,
           customer_phone: customer?.phone,
           amount: parseFloat(amount) || 0,
+          send_sms: sendSms
         }),
       });
 
@@ -381,6 +393,12 @@ export default function Home() {
             speakAIVoicePrompt={speakAIVoicePrompt}
             onTextBillSubmit={handleTextPromptBillSubmitWithText}
             isSubmitting={isSubmittingBill}
+            customerName={customerName}
+            setCustomerName={setCustomerName}
+            customerPhone={customerPhone}
+            setCustomerPhone={setCustomerPhone}
+            sendSms={sendSms}
+            setSendSms={setSendSms}
           />
         </main>
       )}
