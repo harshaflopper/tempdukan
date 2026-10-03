@@ -7,7 +7,7 @@ import StatsSummary from '../components/StatsSummary';
 import CameraScanner from '../components/CameraScanner';
 import VoiceRecorder from '../components/VoiceRecorder';
 import InventoryCatalog from '../components/InventoryCatalog';
-import { Sparkles, Camera, CheckCircle2, Check, Volume2, RefreshCw, ArrowRight } from 'lucide-react';
+import { Sparkles, Camera, CheckCircle2, Check, Volume2, RefreshCw, ArrowRight, ShoppingCart, Package, AlertTriangle, Hash } from 'lucide-react';
 
 const API_BASE = 'http://localhost:8000/api/v1';
 
@@ -298,7 +298,7 @@ export default function Home() {
                     : 'bg-slate-50 text-slate-700 hover:bg-slate-100 font-bold'
                 }`}
               >
-                <span className="text-sm">🛒</span>
+                <ShoppingCart className="w-4 h-4" />
                 <span className="text-xs">Bikri (Sell)</span>
               </button>
 
@@ -311,7 +311,7 @@ export default function Home() {
                     : 'bg-slate-50 text-slate-700 hover:bg-slate-100 font-bold'
                 }`}
               >
-                <span className="text-sm">📦</span>
+                <Package className="w-4 h-4" />
                 <span className="text-xs">Maal Aaya</span>
               </button>
 
@@ -324,7 +324,7 @@ export default function Home() {
                     : 'bg-slate-50 text-slate-700 hover:bg-slate-100 font-bold'
                 }`}
               >
-                <span className="text-sm">⚠️</span>
+                <AlertTriangle className="w-4 h-4" />
                 <span className="text-xs">Kharab</span>
               </button>
 
@@ -337,7 +337,7 @@ export default function Home() {
                     : 'bg-slate-50 text-slate-700 hover:bg-slate-100 font-bold'
                 }`}
               >
-                <span className="text-sm">🔢</span>
+                <Hash className="w-4 h-4" />
                 <span className="text-xs">Ginti</span>
               </button>
             </div>
