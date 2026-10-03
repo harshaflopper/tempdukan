@@ -142,7 +142,7 @@ export default function Home() {
       }
     } catch (err) {
       console.error('Error creating bill from text prompt:', err);
-    } fontally {
+    } finally {
       setIsSubmittingBill(false);
     }
   };
