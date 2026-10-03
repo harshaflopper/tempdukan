@@ -7,7 +7,8 @@ import StatsSummary from '../components/StatsSummary';
 import CameraScanner from '../components/CameraScanner';
 import VoiceRecorder from '../components/VoiceRecorder';
 import InventoryCatalog from '../components/InventoryCatalog';
-import { Sparkles, Camera, CheckCircle2, Check, Volume2, RefreshCw, ArrowRight, ShoppingCart, Package, AlertTriangle, Hash } from 'lucide-react';
+import UdhaarLedger from '../components/UdhaarLedger';
+import { Sparkles, Camera, CheckCircle2, Check, Volume2, RefreshCw, ShoppingCart, Package, AlertTriangle, Hash, Receipt, Wallet, UserCheck } from 'lucide-react';
 
 const API_BASE = 'http://localhost:8000/api/v1';
 
@@ -31,9 +32,10 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState('onboard');
   const [shopId] = useState('SHOP001');
   const [products, setProducts] = useState([]);
+  const [customers, setCustomers] = useState([]);
 
-  // Dukandar Quick Mode: 'SALE' (Bikri) | 'RESTOCK' (Maal Aaya) | 'DAMAGE' (Kharab) | 'CORRECTION' (Ginti)
-  const [quickMode, setQuickMode] = useState('SALE');
+  // Dukandar Quick Mode: 'BILL' (Customer Bill) | 'UDHAAR_PAYMENT' (Receive Payment) | 'RESTOCK' (Maal Aaya) | 'DAMAGE' (Kharab)
+  const [quickMode, setQuickMode] = useState('BILL');
 
   // Workflow Steps: 'camera' -> 'snapped' -> 'analyzing' -> 'results'
   const [workflowStep, setWorkflowStep] = useState('camera');
@@ -41,6 +43,7 @@ export default function Home() {
   const [capturedPhotoUrl, setCapturedPhotoUrl] = useState(null);
   const [photoBlob, setPhotoBlob] = useState(null);
   const [successToast, setSuccessToast] = useState(null);
+  const [generatedBill, setGeneratedBill] = useState(null);
 
   // Result & Form State
   const [aiResult, setAiResult] = useState(null);
@@ -48,13 +51,15 @@ export default function Home() {
     is_existing: false,
     id: null,
     name: '',
+    customer_name: '',
     selling_price: 10,
     current_quantity: 0,
     add_quantity: 1,
     quantity: 1,
     unit: 'packet',
     expiry_date: '',
-    action_type: 'SALE',
+    action_type: 'BILL',
+    is_udhaar: false,
   });
 
   const videoRef = useRef(null);
@@ -62,6 +67,7 @@ export default function Home() {
 
   useEffect(() => {
     fetchInventory();
+    fetchCustomers();
   }, []);
 
   async function fetchInventory() {
@@ -69,9 +75,19 @@ export default function Home() {
       const res = await fetch(`${API_BASE}/products?shop_id=${shopId}`);
       if (res.ok) {
         const data = await res.json();
-        if (data.products) {
-          setProducts(data.products);
-        }
+        if (data.products) setProducts(data.products);
+      }
+    } catch (e) {
+      console.warn('Backend offline mode');
+    }
+  }
+
+  async function fetchCustomers() {
+    try {
+      const res = await fetch(`${API_BASE}/customers?shop_id=${shopId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.customers) setCustomers(data.customers);
       }
     } catch (e) {
       console.warn('Backend offline mode');
@@ -102,14 +118,16 @@ export default function Home() {
         setCapturedPhotoUrl(url);
         setWorkflowStep('snapped');
         setSuccessToast(null);
+        setGeneratedBill(null);
       }
     }, 'image/jpeg', 0.90);
   };
 
-  // STEP 2: PROCESS & ANALYZE PRODUCT WITH AI
+  // STEP 2: PROCESS & ANALYZE BILL / PRODUCT WITH AI
   const handleAnalyzeProduct = async () => {
     setWorkflowStep('analyzing');
     setSuccessToast(null);
+    setGeneratedBill(null);
 
     try {
       const formData = new FormData();
@@ -118,6 +136,35 @@ export default function Home() {
       formData.append('shop_id', shopId);
       formData.append('mode', quickMode);
 
+      // If in BILL or UDHAAR_PAYMENT mode, call /create-bill endpoint
+      if (quickMode === 'BILL' || quickMode === 'UDHAAR_PAYMENT') {
+        const res = await fetch(`${API_BASE}/create-bill`, {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (res.ok) {
+          const billData = await res.json();
+          const toastMsg = billData.ai_response || `Bill created successfully!`;
+          setSuccessToast(toastMsg);
+          speakAIVoicePrompt(toastMsg);
+
+          if (billData.items) {
+            setGeneratedBill(billData);
+          }
+
+          await fetchInventory();
+          await fetchCustomers();
+
+          setWorkflowStep('camera');
+          setCapturedPhotoUrl(null);
+          setPhotoBlob(null);
+          setRecordedAudioBlob(null);
+          return;
+        }
+      }
+
+      // Default Onboard Endpoint for Restock / Damage / Count Audit
       const res = await fetch(`${API_BASE}/onboard`, {
         method: 'POST',
         body: formData,
@@ -126,20 +173,19 @@ export default function Home() {
       if (res.ok) {
         const data = await res.json();
 
-        // CASE A: VOICE NOTE ATTACHED -> DIRECT DB SAVE & INSTANT RESET
         if (recordedAudioBlob || data.case === 2) {
           const toastMsg = data.ai_response || `Done! Stock updated automatically.`;
           setSuccessToast(toastMsg);
           speakAIVoicePrompt(toastMsg);
 
           await fetchInventory();
+          await fetchCustomers();
           setWorkflowStep('camera');
           setCapturedPhotoUrl(null);
           setPhotoBlob(null);
           setRecordedAudioBlob(null);
           setAiResult(null);
         } else {
-          // CASE B: PHOTO ONLY -> SHOW CONFIRMATION CARD
           setAiResult(data);
           if (data.ai_response) speakAIVoicePrompt(data.ai_response);
 
@@ -151,12 +197,14 @@ export default function Home() {
               is_existing: true,
               id: ep.id,
               name: ep.name,
+              customer_name: '',
               current_quantity: parseFloat(ep.quantity) || 0,
               add_quantity: 1,
               selling_price: prefilledPrice,
               unit: ep.unit || 'packet',
               expiry_date: ep.expiry_date || data.expiry_date || '',
               action_type: action,
+              is_udhaar: false,
             });
           } else {
             const prodName = data.product_name || 'Recognized Item';
@@ -164,46 +212,55 @@ export default function Home() {
             setManualForm({
               is_existing: false,
               name: prodName,
+              customer_name: '',
               selling_price: price,
-              quantity: action === 'SALE' ? 0 : 1,
+              quantity: action === 'SALE' || action === 'BILL' ? 0 : 1,
               unit: 'packet',
               expiry_date: data.expiry_date || '',
               action_type: action,
+              is_udhaar: false,
             });
           }
           setWorkflowStep('results');
         }
       }
     } catch (err) {
-      if (recordedAudioBlob) {
-        const toastMsg = "Done! Saved transaction to shop inventory.";
-        setSuccessToast(toastMsg);
-        speakAIVoicePrompt(toastMsg);
-        await fetchInventory();
-        setWorkflowStep('camera');
-        setCapturedPhotoUrl(null);
-        setPhotoBlob(null);
-        setRecordedAudioBlob(null);
-      } else {
-        const fallbackMsg = "Recognized product! Confirm quantity to update inventory.";
-        speakAIVoicePrompt(fallbackMsg);
-        setAiResult({
-          status: 'PHOTO_ONLY_NEW_PRODUCT',
-          product_name: 'Tic-Tac Limited Edition Intense Mint',
-          printed_mrp: 20.0,
-          ai_response: fallbackMsg
-        });
-        setManualForm({
-          is_existing: false,
-          name: 'Tic-Tac Limited Edition Intense Mint',
-          selling_price: 20.0,
-          quantity: 1,
-          unit: 'box',
-          expiry_date: 'Dec 2026',
-          action_type: quickMode,
-        });
-        setWorkflowStep('results');
+      const toastMsg = "Done! Processed transaction.";
+      setSuccessToast(toastMsg);
+      speakAIVoicePrompt(toastMsg);
+      await fetchInventory();
+      await fetchCustomers();
+      setWorkflowStep('camera');
+      setCapturedPhotoUrl(null);
+      setPhotoBlob(null);
+      setRecordedAudioBlob(null);
+    }
+  };
+
+  // Direct Udhaar payment handler from UdhaarLedger component
+  const handleDirectUdhaarPayment = async (customer, amount) => {
+    try {
+      const res = await fetch(`${API_BASE}/udhaar/payment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shop_id: shopId,
+          customer_id: customer?.id,
+          customer_name: customer?.name,
+          customer_phone: customer?.phone,
+          amount: parseFloat(amount) || 0,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const msg = data.ai_response || `Received ₹${amount} payment from ${customer.name}. New balance: ₹${data.customer?.udhaar_balance || 0}`;
+        setSuccessToast(msg);
+        speakAIVoicePrompt(msg);
+        await fetchCustomers();
       }
+    } catch (e) {
+      console.error('Udhaar payment error:', e);
     }
   };
 
@@ -216,7 +273,7 @@ export default function Home() {
         let payload = { shop_id: shopId };
         const action = manualForm.action_type || quickMode;
 
-        if (action === 'SALE' || action === 'DAMAGE') {
+        if (action === 'SALE' || action === 'BILL' || action === 'DAMAGE') {
           payload.deduct_quantity = parseFloat(manualForm.add_quantity) || 1;
         } else if (action === 'CORRECTION') {
           payload.new_quantity = parseFloat(manualForm.add_quantity) || 0;
@@ -284,22 +341,35 @@ export default function Home() {
       {activeTab === 'onboard' && (
         <main className="flex flex-col gap-4">
           {/* DUKANDAR QUICK ACTION SELECTOR BAR */}
-          <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-1.5">
+          <div className="bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-2">
             <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider px-1">
-              Select Shop Action (Dukaan Action)
+              Dukaan Quick Mode Select
             </span>
             <div className="grid grid-cols-4 gap-1.5">
               <button
                 type="button"
-                onClick={() => setQuickMode('SALE')}
+                onClick={() => setQuickMode('BILL')}
                 className={`py-2 px-1 rounded-xl flex flex-col items-center gap-1 transition-all ${
-                  quickMode === 'SALE'
+                  quickMode === 'BILL'
                     ? 'bg-emerald-600 text-white shadow-emerald-glow font-extrabold'
                     : 'bg-slate-50 text-slate-700 hover:bg-slate-100 font-bold'
                 }`}
               >
-                <ShoppingCart className="w-4 h-4" />
-                <span className="text-xs">Bikri (Sell)</span>
+                <Receipt className="w-4 h-4" />
+                <span className="text-xs">Bill (Bikri)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setQuickMode('UDHAAR_PAYMENT')}
+                className={`py-2 px-1 rounded-xl flex flex-col items-center gap-1 transition-all ${
+                  quickMode === 'UDHAAR_PAYMENT'
+                    ? 'bg-purple-600 text-white shadow-md font-extrabold'
+                    : 'bg-slate-50 text-slate-700 hover:bg-slate-100 font-bold'
+                }`}
+              >
+                <Wallet className="w-4 h-4" />
+                <span className="text-xs">Udhaar Jama</span>
               </button>
 
               <button
@@ -327,19 +397,6 @@ export default function Home() {
                 <AlertTriangle className="w-4 h-4" />
                 <span className="text-xs">Kharab</span>
               </button>
-
-              <button
-                type="button"
-                onClick={() => setQuickMode('CORRECTION')}
-                className={`py-2 px-1 rounded-xl flex flex-col items-center gap-1 transition-all ${
-                  quickMode === 'CORRECTION'
-                    ? 'bg-amber-600 text-white shadow-md font-extrabold'
-                    : 'bg-slate-50 text-slate-700 hover:bg-slate-100 font-bold'
-                }`}
-              >
-                <Hash className="w-4 h-4" />
-                <span className="text-xs">Ginti</span>
-              </button>
             </div>
           </div>
 
@@ -352,18 +409,18 @@ export default function Home() {
                 type="button"
                 onClick={handleTakeSnap}
                 className={`w-full min-h-[58px] text-white rounded-2xl font-heading font-extrabold text-base flex items-center justify-center gap-3 shadow-lg transition-all active:scale-[0.99] ${
-                  quickMode === 'SALE' ? 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 shadow-emerald-glow' :
+                  quickMode === 'BILL' ? 'bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 shadow-emerald-glow' :
+                  quickMode === 'UDHAAR_PAYMENT' ? 'bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600' :
                   quickMode === 'RESTOCK' ? 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600' :
-                  quickMode === 'DAMAGE' ? 'bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600' :
-                  'bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600'
+                  'bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600'
                 }`}
               >
                 <Camera className="w-6 h-6 text-white" />
                 <span>
-                  {quickMode === 'SALE' ? 'Snap Photo for Bikri (Sale)' :
+                  {quickMode === 'BILL' ? 'Snap Photo for AI Bill & Bikri' :
+                   quickMode === 'UDHAAR_PAYMENT' ? 'Snap Photo / Speak Payment' :
                    quickMode === 'RESTOCK' ? 'Snap Photo for Restock (Maal Aaya)' :
-                   quickMode === 'DAMAGE' ? 'Snap Photo for Kharab (Damage)' :
-                   'Snap Photo for Stock Ginti (Count Audit)'}
+                   'Snap Photo for Kharab (Damage)'}
                 </span>
               </button>
             </div>
@@ -379,7 +436,7 @@ export default function Home() {
                   </div>
                   <div className="flex flex-col justify-center gap-1">
                     <span className="text-xs font-extrabold text-emerald-700 uppercase tracking-wider">Product Photo Snapped</span>
-                    <span className="text-xs text-slate-600 font-medium">Ready for AI Vision & Database Matching</span>
+                    <span className="text-xs text-slate-600 font-medium">Ready for AI Vision & Bill Matching</span>
                     <button
                       type="button"
                       onClick={handleResetToCamera}
@@ -404,12 +461,12 @@ export default function Home() {
                 {workflowStep === 'analyzing' ? (
                   <>
                     <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Analyzing with Gemini 2.5 AI & Updating Inventory...</span>
+                    <span>Analyzing with AI & Processing Bill...</span>
                   </>
                 ) : (
                   <>
                     <Sparkles className="w-5 h-5 text-emerald-100" />
-                    <span>{recordedAudioBlob ? 'Process Photo + Voice Note' : 'Analyze & Sync Inventory Now'}</span>
+                    <span>{recordedAudioBlob ? 'Process Bill / Voice Note' : 'Analyze & Process Bill'}</span>
                   </>
                 )}
               </button>
@@ -424,7 +481,77 @@ export default function Home() {
             </div>
           )}
 
-          {/* STEP 3: AI ANALYSIS RESULTS & AUDIO-BASED CONFIRMATION CARD */}
+          {/* DIGITAL BILL RECEIPT CARD */}
+          {generatedBill && (
+            <div className="bg-white rounded-2xl border-2 border-emerald-600 p-4 shadow-md flex flex-col gap-3 animate-in fade-in">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                <div className="flex items-center gap-2 text-emerald-800 font-extrabold font-heading text-base">
+                  <Receipt className="w-5 h-5 text-emerald-600" />
+                  <span>Kirana Digital Receipt</span>
+                </div>
+                <span className="text-xs font-bold text-slate-500 font-mono">
+                  {generatedBill.bill_id || 'BILL-NEW'}
+                </span>
+              </div>
+
+              {generatedBill.customer && (
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
+                  <div>
+                    <span className="font-extrabold text-slate-800">{generatedBill.customer.name}</span>
+                    {generatedBill.customer.phone && <span className="text-slate-500 ml-2">({generatedBill.customer.phone})</span>}
+                  </div>
+                  <div className="font-bold text-emerald-700">
+                    {generatedBill.is_udhaar ? (
+                      <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                        Udhaar Credit: ₹{generatedBill.customer.udhaar_balance}
+                      </span>
+                    ) : (
+                      <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                        Paid in Full (Nagad)
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {generatedBill.items && generatedBill.items.length > 0 && (
+                <div className="flex flex-col gap-1 text-xs">
+                  <div className="grid grid-cols-12 font-bold text-slate-500 border-b border-slate-100 pb-1">
+                    <span className="col-span-6">Item</span>
+                    <span className="col-span-2 text-center">Qty</span>
+                    <span className="col-span-2 text-right">Rate</span>
+                    <span className="col-span-2 text-right">Total</span>
+                  </div>
+                  {generatedBill.items.map((item, idx) => (
+                    <div key={idx} className="grid grid-cols-12 font-medium text-slate-800 py-1 border-b border-slate-50">
+                      <span className="col-span-6 font-bold truncate">{item.name}</span>
+                      <span className="col-span-2 text-center text-slate-600">{item.quantity} {item.unit || 'pkt'}</span>
+                      <span className="col-span-2 text-right text-slate-600">₹{item.rate}</span>
+                      <span className="col-span-2 text-right font-extrabold text-slate-900">₹{item.item_total}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between border-t border-slate-200 pt-2 font-extrabold text-slate-900 text-sm">
+                <span>Grand Total (Kool Rashi)</span>
+                <span className="text-emerald-700 text-lg">₹{generatedBill.total_amount || 0}</span>
+              </div>
+
+              <div className="flex gap-2 mt-1">
+                <button
+                  type="button"
+                  onClick={() => setGeneratedBill(null)}
+                  className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Close Receipt</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3: AI ANALYSIS RESULTS & CONFIRMATION CARD */}
           {workflowStep === 'results' && aiResult !== null && (
             <div className="bg-white rounded-2xl border-2 border-emerald-500 p-4 shadow-soft-lg flex flex-col gap-4 animate-in fade-in">
               {/* Header Badge */}
@@ -463,7 +590,7 @@ export default function Home() {
                     Matched Item in Inventory: '{manualForm.name}'
                   </span>
                   <span className="text-xs text-amber-800 font-medium">
-                    Current Stock: <strong>{manualForm.current_quantity} {manualForm.unit}s</strong> | Selling Price: <strong>₹{manualForm.selling_price}</strong>
+                    Current Stock: <strong>{manualForm.current_quantity} {manualForm.unit}s</strong> | Selling Price: <strong>₹{manualForm.selling_price}</strong> {manualForm.expiry_date && `| Exp: ${manualForm.expiry_date}`}
                   </span>
                 </div>
               )}
@@ -485,15 +612,9 @@ export default function Home() {
 
                 {manualForm.is_existing ? (
                   <div className="flex flex-col gap-2">
-                    <label className="text-xs font-semibold text-slate-500">
-                      {manualForm.action_type === 'SALE' ? 'Units Sold (Deduct Stock)' :
-                       manualForm.action_type === 'DAMAGE' ? 'Damaged Units (Deduct Stock)' :
-                       manualForm.action_type === 'CORRECTION' ? 'Physical Stock Count (Set Stock)' :
-                       'Restock Units (Add Stock)'}
-                    </label>
-
+                    <label className="text-xs font-semibold text-slate-500">Quick Stock Top-Up (Add Units)</label>
                     <div className="grid grid-cols-4 gap-2">
-                      {[1, 2, 5, 10].map((num) => (
+                      {[1, 5, 10, 20].map((num) => (
                         <button
                           key={num}
                           type="button"
@@ -504,26 +625,25 @@ export default function Home() {
                               : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                           }`}
                         >
-                          {manualForm.action_type === 'SALE' || manualForm.action_type === 'DAMAGE' ? `-${num}` : `+${num}`}
+                          +{num}
                         </button>
                       ))}
                     </div>
 
                     <div className="grid grid-cols-3 gap-2 mt-1">
                       <div className="flex flex-col gap-1">
-                        <label className="text-xs font-semibold text-slate-500">Quantity</label>
+                        <label className="text-xs font-semibold text-slate-500">Add Stock Qty</label>
                         <input
                           type="number"
                           required
-                          step="0.01"
-                          min="0.01"
+                          min="1"
                           value={manualForm.add_quantity}
                           onChange={(e) => setManualForm({ ...manualForm, add_quantity: parseFloat(e.target.value) || 1 })}
                           className="w-full min-h-[44px] px-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900"
                         />
                       </div>
                       <div className="flex flex-col gap-1">
-                        <label className="text-xs font-semibold text-slate-500">Price (₹)</label>
+                        <label className="text-xs font-semibold text-slate-500">Selling Price (₹)</label>
                         <input
                           type="number"
                           step="0.5"
@@ -560,13 +680,12 @@ export default function Home() {
                         />
                       </div>
                       <div className="flex flex-col gap-1">
-                        <label className="text-xs font-semibold text-slate-500">Initial Stock Quantity</label>
+                        <label className="text-xs font-semibold text-slate-500">Stock Quantity</label>
                         <input
                           type="number"
                           required
-                          step="0.01"
                           value={manualForm.quantity}
-                          onChange={(e) => setManualForm({ ...manualForm, quantity: parseFloat(e.target.value) || 0 })}
+                          onChange={(e) => setManualForm({ ...manualForm, quantity: parseFloat(e.target.value) || 1 })}
                           className="w-full min-h-[44px] px-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900"
                         />
                       </div>
@@ -591,7 +710,7 @@ export default function Home() {
                     className="w-full min-h-[52px] bg-emerald-600 hover:bg-emerald-700 text-white font-heading font-extrabold rounded-xl flex items-center justify-center gap-2 shadow-emerald-glow text-base"
                   >
                     <Check className="w-5 h-5" />
-                    <span>Confirm & Sync Inventory</span>
+                    <span>{manualForm.is_existing ? 'Update Existing Stock & Expiry' : 'Save to Shop Inventory'}</span>
                   </button>
 
                   <button
@@ -614,6 +733,15 @@ export default function Home() {
           <InventoryCatalog
             products={products}
             onUpdateStock={handleUpdateStock}
+          />
+        </main>
+      )}
+
+      {activeTab === 'udhaar' && (
+        <main className="flex flex-col gap-4">
+          <UdhaarLedger
+            customers={customers}
+            onRecordPayment={handleDirectUdhaarPayment}
           />
         </main>
       )}

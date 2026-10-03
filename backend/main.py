@@ -2,10 +2,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers.onboarding import router as onboarding_router
 from routers.inventory import router as inventory_router
+from routers.billing import router as billing_router
 
 app = FastAPI(
-    title="LastDukan AI Product Onboarding API",
-    description="Multi-signal AI engine & Shop Memory for Village Dukandars",
+    title="LastDukan AI Product Onboarding & Billing API",
+    description="Multi-signal AI engine, Shop Memory & Udhaar Ledger for Village Dukandars",
     version="1.0.0"
 )
 
@@ -21,6 +22,7 @@ app.add_middleware(
 # Register Routers
 app.include_router(onboarding_router)
 app.include_router(inventory_router)
+app.include_router(billing_router)
 
 @app.get("/")
 def root():

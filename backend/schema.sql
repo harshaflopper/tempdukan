@@ -77,3 +77,51 @@ BEGIN
     LIMIT match_count;
 END;
 $$;
+
+-- 4. Customers Table (Udhaar & Contact Ledger)
+CREATE TABLE IF NOT EXISTS customers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    shop_id VARCHAR(50) NOT NULL DEFAULT 'SHOP001',
+    name VARCHAR(150) NOT NULL,
+    phone VARCHAR(20),
+    udhaar_balance NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+    created_at TIMESTAMP WITH TIMEZONE DEFAULT NOW()
+);
+
+-- 5. Bills / Sales Transactions Table
+CREATE TABLE IF NOT EXISTS bills (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    shop_id VARCHAR(50) NOT NULL DEFAULT 'SHOP001',
+    customer_id UUID REFERENCES customers(id),
+    customer_name VARCHAR(150),
+    total_amount NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+    paid_amount NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+    udhaar_amount NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+    payment_mode VARCHAR(50) DEFAULT 'CASH',
+    status VARCHAR(50) DEFAULT 'COMPLETED',
+    created_at TIMESTAMP WITH TIMEZONE DEFAULT NOW()
+);
+
+-- 6. Bill Items Table
+CREATE TABLE IF NOT EXISTS bill_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    bill_id UUID REFERENCES bills(id) ON DELETE CASCADE,
+    product_id UUID REFERENCES products(id),
+    product_name VARCHAR(255) NOT NULL,
+    quantity NUMERIC(10, 2) NOT NULL,
+    unit VARCHAR(50) DEFAULT 'packet',
+    unit_price NUMERIC(10, 2) NOT NULL,
+    total_price NUMERIC(10, 2) NOT NULL
+);
+
+-- 7. Udhaar Payments & Logs Table
+CREATE TABLE IF NOT EXISTS udhaar_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    shop_id VARCHAR(50) NOT NULL DEFAULT 'SHOP001',
+    customer_id UUID REFERENCES customers(id),
+    type VARCHAR(30) NOT NULL, -- 'UDHAAR_ADDED' or 'PAYMENT_RECEIVED'
+    amount NUMERIC(10, 2) NOT NULL,
+    balance_after NUMERIC(10, 2) NOT NULL,
+    notes TEXT,
+    created_at TIMESTAMP WITH TIMEZONE DEFAULT NOW()
+);
