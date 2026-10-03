@@ -9,12 +9,12 @@ export default function SegmentTabs({ activeTab, setActiveTab }) {
         onClick={() => setActiveTab('onboard')}
         className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-extrabold transition-all ${
           activeTab === 'onboard'
-            ? 'bg-white text-emerald-700 shadow-sm'
+            ? 'bg-emerald-600 text-white shadow-sm'
             : 'text-slate-600 hover:text-slate-900 font-bold'
         }`}
       >
         <Receipt className="w-4 h-4" />
-        <span>AI Bill & Snap</span>
+        <span>AI Bill Window</span>
       </button>
 
       <button
@@ -22,7 +22,7 @@ export default function SegmentTabs({ activeTab, setActiveTab }) {
         onClick={() => setActiveTab('inventory')}
         className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-extrabold transition-all ${
           activeTab === 'inventory'
-            ? 'bg-white text-emerald-700 shadow-sm'
+            ? 'bg-emerald-600 text-white shadow-sm'
             : 'text-slate-600 hover:text-slate-900 font-bold'
         }`}
       >
@@ -35,7 +35,7 @@ export default function SegmentTabs({ activeTab, setActiveTab }) {
         onClick={() => setActiveTab('udhaar')}
         className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-extrabold transition-all ${
           activeTab === 'udhaar'
-            ? 'bg-white text-emerald-700 shadow-sm'
+            ? 'bg-emerald-600 text-white shadow-sm'
             : 'text-slate-600 hover:text-slate-900 font-bold'
         }`}
       >
