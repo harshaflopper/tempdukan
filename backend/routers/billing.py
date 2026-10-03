@@ -9,7 +9,9 @@ from services.billing_service import (
     record_udhaar_payment,
     get_or_create_customer,
     get_customer_history,
-    get_udhaar_summary
+    get_udhaar_summary,
+    attach_phone_to_customer_and_bill,
+    get_sales_analytics
 )
 from services.sms_service import send_udhaar_reminder_sms
 from services.voice_service import process_voice_audio, parse_transcript_with_gemini
@@ -39,6 +41,13 @@ class SendReminderRequest(BaseModel):
     shop_id: str = settings.DEFAULT_SHOP_ID
     customer_id: str
     phone: Optional[str] = None
+
+class AddPhoneRequest(BaseModel):
+    shop_id: str = settings.DEFAULT_SHOP_ID
+    phone: str
+    customer_id: Optional[str] = None
+    bill_id: Optional[str] = None
+    customer_name: Optional[str] = None
 
 @router.post("/create-bill")
 async def create_bill_endpoint(
@@ -107,11 +116,10 @@ async def create_bill_endpoint(
             })
 
     if not items:
-        items.append({
-            "product_name": voice_data.get("product_name") or "Tic-Tac",
-            "quantity": float(voice_data.get("quantity") or 1.0),
-            "unit": voice_data.get("unit") or "packet"
-        })
+        raise HTTPException(
+            status_code=400,
+            detail="AI could not recognize products from the voice note or photo. Please speak clearly, e.g. 'Ravi ji 2 Maggi packets'."
+        )
 
     return await create_smart_bill(
         shop_id=shop_id,
@@ -232,3 +240,28 @@ async def get_bills(shop_id: str = settings.DEFAULT_SHOP_ID):
         return {"bills": res.data or []}
     except Exception as e:
         return {"bills": [], "error": str(e)}
+
+@router.post("/bills/add-phone-and-send-sms")
+async def add_phone_and_send_sms_endpoint(req: AddPhoneRequest):
+    """
+    Attaches customer 10-digit mobile number to profile & bill, and dispatches Vendel Digital Bill SMS.
+    Does NOT close receipt view.
+    """
+    return await attach_phone_to_customer_and_bill(
+        shop_id=req.shop_id,
+        phone=req.phone,
+        customer_id=req.customer_id,
+        bill_id=req.bill_id,
+        customer_name=req.customer_name
+    )
+
+@router.get("/analytics/sales")
+async def get_sales_analytics_endpoint(
+    shop_id: str = settings.DEFAULT_SHOP_ID,
+    period: str = "today"
+):
+    """
+    Computes simple, numbers-only sales analytics (Daily, Weekly, Monthly, All-Time)
+    and fetches stored receipts for Indian Dukandars.
+    """
+    return await get_sales_analytics(shop_id=shop_id, period=period)
