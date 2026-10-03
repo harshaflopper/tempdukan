@@ -86,20 +86,17 @@ async def parse_transcript_with_gemini(transcript: str, shop_id: str = settings.
 
         Rules:
         1. Match spoken items STRICTLY against the Shop Inventory Catalog above.
-           Example: Spoken "20 packet Maggi" -> product_name: "Maggi", quantity: 20, unit: "packet".
-           Example: Spoken "2 packet Parle-G" -> product_name: "Parle-G", quantity: 2, unit: "packet".
+           Example: Spoken "Ravi ji das box tiktak" -> customer_name: "Ravi", product_name: "Tic Tac" or matched product, quantity: 10, unit: "box".
 
         2. Customer & Udhaar & Discount Detection:
            - Extract customer_name if mentioned (e.g., "Ravi ji" -> "Ravi", "Suresh bhaiya" -> "Suresh").
            - Extract customer_phone if spoken (10-digit phone number).
-           - Extract udhaar_amount if spoken (e.g., "250 udhar", "udhar 250 rakho", "baaki account me daalo" -> udhaar_amount: 250.0). Set is_udhaar = true if udhaar is mentioned.
-           - Extract discount_amount if spoken (e.g., "50 rupees discount", "20 kam kar do" -> discount_amount: 50.0).
+           - ONLY set is_udhaar = true AND udhaar_amount if the user EXPLICITLY speaks "udhaar", "khata", "baaki", "bahi khata" or a specific udhaar amount (e.g., "250 udhar"). Otherwise set is_udhaar = false and udhaar_amount = null.
+           - ONLY set discount_amount if user EXPLICITLY speaks "discount" or "kam kar do" (e.g., "20 discount"). Otherwise set discount_amount = null.
 
         3. Action Type:
-           - "BILL" or "SALE" if customer buying items (e.g., "Ravi ji 20 packet Maggi 2 Parle-G").
+           - "BILL" or "SALE" if customer buying items (e.g., "Ravi ji 10 box Tic Tac").
            - "UDHAAR_PAYMENT" if customer paying back debt (e.g., "Ravi paid 500 rupees").
-           - "RESTOCK" if new stock received.
-           - "DAMAGE" if broken/expired item.
 
         Return ONLY a JSON object:
         {{
@@ -114,7 +111,7 @@ async def parse_transcript_with_gemini(transcript: str, shop_id: str = settings.
              {{
                "product_name": "Matched Inventory Item Name",
                "quantity": float,
-               "unit": "packet/kg/piece/liter/box",
+               "unit": "packet/kg/piece/liter/box/bottle",
                "selling_price": float or null
              }}
           ]
@@ -158,12 +155,15 @@ async def parse_transcript_with_gemini(transcript: str, shop_id: str = settings.
                                         "selling_price": float(it.get("selling_price")) if it.get("selling_price") else None
                                     })
 
+                                is_udh = bool(parsed.get("is_udhaar") and parsed.get("udhaar_amount") and float(parsed.get("udhaar_amount")) > 0)
+                                udh_amt = float(parsed["udhaar_amount"]) if is_udh and parsed.get("udhaar_amount") is not None else None
+
                                 return {
                                     "action_type": action,
                                     "customer_name": parsed.get("customer_name") or regex_data.get("customer_name"),
                                     "customer_phone": parsed.get("customer_phone") or regex_data.get("customer_phone"),
-                                    "is_udhaar": bool(parsed.get("is_udhaar") or (parsed.get("udhaar_amount") and float(parsed.get("udhaar_amount")) > 0) or regex_data.get("is_udhaar", False)),
-                                    "udhaar_amount": float(parsed["udhaar_amount"]) if parsed.get("udhaar_amount") is not None else None,
+                                    "is_udhaar": is_udh,
+                                    "udhaar_amount": udh_amt,
                                     "discount_amount": float(parsed["discount_amount"]) if parsed.get("discount_amount") is not None else None,
                                     "udhaar_payment_amount": float(parsed["udhaar_payment_amount"]) if parsed.get("udhaar_payment_amount") is not None else regex_data.get("udhaar_payment_amount"),
                                     "items": cleaned_items,
@@ -210,13 +210,11 @@ def fallback_regex_parse(transcript: str) -> Dict[str, Any]:
         if c_name.lower() not in ('add', 'put', 'store', 'snap', 'becha', 'aaya', 'kharab', 'bill'):
             result["customer_name"] = c_name
 
-    # Check for Udhaar intent / amount
+    # Check for EXPLICIT Udhaar intent / amount
     udh_match = re.search(r'(?:udhaar|baaki|khata)\s*(?:me|par)?\s*(\d+(?:\.\d+)?)', transcript, re.IGNORECASE)
     if udh_match:
         result["is_udhaar"] = True
         result["udhaar_amount"] = float(udh_match.group(1))
-    elif re.search(r'\b(udhaar|khata|baaki|bahi|later)\b', transcript, re.IGNORECASE):
-        result["is_udhaar"] = True
 
     # Check for Discount intent / amount
     disc_match = re.search(r'(?:discount|off|kam)\s*(?:rs|rupees|₹)?\s*(\d+(?:\.\d+)?)', transcript, re.IGNORECASE)
@@ -226,8 +224,6 @@ def fallback_regex_parse(transcript: str) -> Dict[str, Any]:
     # Action Type Regex
     if re.search(r'\b(becha|sold|diya|nikala|bik|sale|took|bill)\b', transcript, re.IGNORECASE):
         result["action_type"] = "BILL"
-    elif re.search(r'\b(aaya|bought|stock|khareeda|unloaded|bhaara)\b', transcript, re.IGNORECASE):
-        result["action_type"] = "RESTOCK"
 
     # Extract Product & Qty
     is_loose = False

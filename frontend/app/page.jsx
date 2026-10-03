@@ -108,50 +108,6 @@ export default function Home() {
   const totalItems = products.reduce((sum, item) => sum + (parseFloat(item.quantity) || 0), 0);
   const stockValue = products.reduce((sum, item) => sum + ((parseFloat(item.selling_price) || 0) * (parseFloat(item.quantity) || 0)), 0);
 
-  // Handle text prompt bill submission in AI Bill Window
-  const handleTextPromptBillSubmitWithText = async (text) => {
-    if (!text || isSubmittingBill) return;
-
-    setIsSubmittingBill(true);
-    setSuccessToast(null);
-    setGeneratedBill(null);
-
-    try {
-      const formData = new FormData();
-      formData.append('text_prompt', text.trim());
-      formData.append('shop_id', shopId);
-      formData.append('mode', 'BILL');
-      if (customerName.trim()) formData.append('customer_name', customerName.trim());
-      if (customerPhone.trim()) formData.append('customer_phone', customerPhone.trim());
-      if (discountAmount) formData.append('discount_amount', discountAmount);
-      if (customUdhaarAmount) formData.append('custom_udhaar_amount', customUdhaarAmount);
-      formData.append('send_sms', sendSms ? 'true' : 'false');
-
-      const res = await fetch(`${API_BASE}/create-bill`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (res.ok) {
-        const billData = await res.json();
-        const toastMsg = billData.ai_response || `Bill created successfully!`;
-        setSuccessToast(toastMsg);
-        speakAIVoicePrompt(toastMsg);
-
-        if (billData.items) {
-          setGeneratedBill(billData);
-        }
-
-        await fetchInventory();
-        await fetchCustomers();
-      }
-    } catch (err) {
-      console.error('Error creating bill from text prompt:', err);
-    } finally {
-      setIsSubmittingBill(false);
-    }
-  };
-
   // STEP 1: CAPTURE PHOTO SNAP
   const handleTakeSnap = () => {
     if (!videoRef.current || !canvasRef.current) return;
@@ -260,6 +216,7 @@ export default function Home() {
     setWorkflowStep('analyzing');
     setSuccessToast(null);
     setGeneratedBill(null);
+    setIsSubmittingBill(true);
 
     try {
       const formData = new FormData();
@@ -284,6 +241,10 @@ export default function Home() {
         setSuccessToast(toastMsg);
         speakAIVoicePrompt(toastMsg);
 
+        if (billData.customer_name && !customerName) {
+          setCustomerName(billData.customer_name);
+        }
+
         if (billData.items) {
           setGeneratedBill(billData);
         }
@@ -307,6 +268,8 @@ export default function Home() {
       setCapturedPhotoUrl(null);
       setPhotoBlob(null);
       setRecordedAudioBlob(null);
+    } finally {
+      setIsSubmittingBill(false);
     }
   };
 
@@ -397,7 +360,6 @@ export default function Home() {
             generatedBill={generatedBill}
             setGeneratedBill={setGeneratedBill}
             speakAIVoicePrompt={speakAIVoicePrompt}
-            onTextBillSubmit={handleTextPromptBillSubmitWithText}
             isSubmitting={isSubmittingBill}
             customerName={customerName}
             setCustomerName={setCustomerName}
@@ -409,6 +371,7 @@ export default function Home() {
             setDiscountAmount={setDiscountAmount}
             customUdhaarAmount={customUdhaarAmount}
             setCustomUdhaarAmount={setCustomUdhaarAmount}
+            existingCustomers={customers}
           />
         </main>
       )}

@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import CameraScanner from './CameraScanner';
 import VoiceRecorder from './VoiceRecorder';
-import { Sparkles, Camera, Receipt, Volume2, CheckCircle2, Check, Send, User, Phone, MessageSquare, Tag, Wallet, AlertCircle } from 'lucide-react';
+import { Sparkles, Camera, Receipt, Volume2, CheckCircle2, Check, Send, User, Phone, MessageSquare, Tag, Wallet, AlertCircle, ArrowRight } from 'lucide-react';
 
 export default function AIBillWindow({
   videoRef,
@@ -19,7 +19,6 @@ export default function AIBillWindow({
   generatedBill,
   setGeneratedBill,
   speakAIVoicePrompt,
-  onTextBillSubmit,
   isSubmitting,
   customerName,
   setCustomerName,
@@ -30,20 +29,16 @@ export default function AIBillWindow({
   discountAmount,
   setDiscountAmount,
   customUdhaarAmount,
-  setCustomUdhaarAmount
+  setCustomUdhaarAmount,
+  existingCustomers = []
 }) {
-  const [spokenText, setSpokenText] = useState('');
+  const [showDiscountInput, setShowDiscountInput] = useState(false);
+  const [showUdhaarInput, setShowUdhaarInput] = useState(false);
 
-  const handleTextSubmit = (e) => {
-    e.preventDefault();
-    if (!spokenText.trim() || isSubmitting) return;
-    if (onTextBillSubmit) {
-      onTextBillSubmit(spokenText.trim());
-      setSpokenText('');
-    }
-  };
-
-  const isNewCustomerWithoutPhone = customerName && customerName.trim() && (!customerPhone || !customerPhone.trim());
+  const isCustomerInDb = existingCustomers.some(c =>
+    (c.name || '').toLowerCase() === (customerName || '').trim().toLowerCase() ||
+    (c.phone && c.phone === customerPhone)
+  );
 
   return (
     <div className="flex flex-col gap-4 animate-in fade-in">
@@ -52,22 +47,80 @@ export default function AIBillWindow({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 font-heading font-extrabold text-base">
             <Receipt className="w-5 h-5 text-emerald-400" />
-            <span>AI Bill & Vendal SMS Window</span>
+            <span>AI Voice Billing & Vendal SMS Window</span>
           </div>
           <span className="text-[10px] font-extrabold text-emerald-300 bg-emerald-900/60 px-2 py-0.5 rounded-full border border-emerald-700">
             Vendal Automated SMS
           </span>
         </div>
         <p className="text-xs text-emerald-200 font-medium">
-          Talk directly to AI ("Ravi ji 20 Maggi, 2 Parle-G, 250 udhar") to match inventory, apply discount & send Vendal SMS bill.
+          Record voice note (e.g. "Ravi ji das box tiktak") or snap photo to automatically generate bill, update stock & sync Udhaar.
         </p>
       </div>
 
-      {/* CUSTOMER PROFILE & SMS TOGGLE SELECTOR */}
-      <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-3 text-xs">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-          <span className="font-extrabold text-slate-700 uppercase tracking-wider">
-            Customer Profile & Billing Options
+      {/* VOICE RECORDING SECTION (NO TYPING FOR DUKANDAR) */}
+      <div className="bg-white p-4 rounded-2xl border-2 border-emerald-500 shadow-soft-lg flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-extrabold text-emerald-900 uppercase tracking-wider">
+            Speak Spoken Bill (Voice Only)
+          </span>
+          <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+            Hindi / Hinglish Voice LLM
+          </span>
+        </div>
+
+        <VoiceRecorder onAudioRecorded={(blob) => setRecordedAudioBlob(blob)} />
+
+        {recordedAudioBlob && (
+          <button
+            type="button"
+            onClick={handleAnalyzeProduct}
+            disabled={isSubmitting}
+            className="w-full min-h-[50px] mt-1 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 text-white rounded-xl font-heading font-extrabold text-sm flex items-center justify-center gap-2 shadow-emerald-glow disabled:opacity-50"
+          >
+            {isSubmitting ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span>AI Matching Inventory & Products...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4 text-emerald-100" />
+                <span>Process Spoken Voice Bill</span>
+              </>
+            )}
+          </button>
+        )}
+      </div>
+
+      {/* NEW CUSTOMER MOBILE NUMBER PROMPT BANNER */}
+      {customerName && customerName.trim() && !isCustomerInDb && (!customerPhone || !customerPhone.trim()) && (
+        <div className="bg-amber-50 border-2 border-amber-400 p-3.5 rounded-2xl flex flex-col gap-2 shadow-sm animate-in fade-in">
+          <div className="flex items-center gap-2 text-amber-900 font-extrabold text-xs uppercase tracking-wider">
+            <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+            <span>New Customer Detected: '{customerName}'</span>
+          </div>
+          <p className="text-xs text-amber-800 font-medium">
+            Enter mobile number for {customerName} to send Vendal SMS bill & save Udhaar profile:
+          </p>
+          <div className="relative">
+            <Phone className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
+            <input
+              type="tel"
+              value={customerPhone || ''}
+              onChange={(e) => setCustomerPhone && setCustomerPhone(e.target.value)}
+              placeholder="Enter Mobile Number (e.g. 9876543210)"
+              className="w-full pl-8 pr-3 py-2 bg-white border border-amber-300 rounded-xl font-bold text-slate-900 text-xs focus:outline-none focus:border-emerald-600"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* BIG ACTION BUTTONS: DISCOUNT & UDHAAR ADJUSTERS */}
+      <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 flex flex-col gap-2.5 text-xs">
+        <div className="flex items-center justify-between px-1">
+          <span className="font-extrabold text-slate-700 uppercase tracking-wider text-[11px]">
+            Billing & Settlement Options
           </span>
           <label className="flex items-center gap-1.5 cursor-pointer font-bold text-emerald-800 select-none">
             <input
@@ -82,96 +135,60 @@ export default function AIBillWindow({
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          <div className="relative">
-            <User className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
-            <input
-              type="text"
-              value={customerName || ''}
-              onChange={(e) => setCustomerName && setCustomerName(e.target.value)}
-              placeholder="Customer Name (e.g. Ravi)"
-              className="w-full pl-8 pr-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none focus:border-emerald-600"
-            />
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowDiscountInput(!showDiscountInput)}
+            className={`py-3 px-3 rounded-xl border font-heading font-extrabold text-xs flex items-center justify-center gap-2 transition-all ${
+              discountAmount || showDiscountInput
+                ? 'bg-emerald-600 text-white border-emerald-700 shadow-sm'
+                : 'bg-white text-emerald-800 border-emerald-300 hover:bg-emerald-50'
+            }`}
+          >
+            <Tag className="w-4 h-4" />
+            <span>{discountAmount ? `Discount: ₹${discountAmount}` : 'Add Discount (Chhut)'}</span>
+          </button>
 
-          <div className="relative">
-            <Phone className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
-            <input
-              type="tel"
-              value={customerPhone || ''}
-              onChange={(e) => setCustomerPhone && setCustomerPhone(e.target.value)}
-              placeholder="Mobile (e.g. 9876543210)"
-              className="w-full pl-8 pr-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:outline-none focus:border-emerald-600"
-            />
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowUdhaarInput(!showUdhaarInput)}
+            className={`py-3 px-3 rounded-xl border font-heading font-extrabold text-xs flex items-center justify-center gap-2 transition-all ${
+              customUdhaarAmount || showUdhaarInput
+                ? 'bg-amber-600 text-white border-amber-700 shadow-sm'
+                : 'bg-white text-amber-800 border-amber-300 hover:bg-amber-50'
+            }`}
+          >
+            <Wallet className="w-4 h-4" />
+            <span>{customUdhaarAmount ? `Udhaar: ₹${customUdhaarAmount}` : 'Mark Udhaar (Khata)'}</span>
+          </button>
         </div>
 
-        {/* Soft prompt for new customer mobile entry */}
-        {isNewCustomerWithoutPhone && (
-          <div className="bg-amber-50 border border-amber-300 p-2.5 rounded-xl flex items-center gap-2 text-[11px] font-bold text-amber-900 animate-in fade-in">
-            <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
-            <span>Customer '{customerName}': Enter mobile number above to send Vendal SMS bill & save Udhaar profile.</span>
-          </div>
-        )}
-
-        {/* Discount & Udhaar Manual Adjusters */}
-        <div className="grid grid-cols-2 gap-2 border-t border-slate-100 pt-2">
-          <div className="relative flex items-center">
-            <Tag className="w-3.5 h-3.5 text-emerald-600 absolute left-3" />
+        {/* Conditional Discount Input Box */}
+        {showDiscountInput && (
+          <div className="bg-white p-2.5 rounded-xl border border-emerald-200 flex items-center gap-2 animate-in fade-in">
+            <Tag className="w-4 h-4 text-emerald-600 flex-shrink-0" />
             <input
               type="number"
               value={discountAmount || ''}
               onChange={(e) => setDiscountAmount && setDiscountAmount(e.target.value)}
-              placeholder="Discount (₹)"
-              className="w-full pl-8 pr-2.5 py-2 bg-emerald-50/50 border border-emerald-200 rounded-xl font-bold text-emerald-900 focus:outline-none focus:border-emerald-600"
+              placeholder="Enter Discount Amount (₹)"
+              className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-900 focus:outline-none focus:border-emerald-600"
             />
           </div>
+        )}
 
-          <div className="relative flex items-center">
-            <Wallet className="w-3.5 h-3.5 text-amber-600 absolute left-3" />
+        {/* Conditional Udhaar Input Box */}
+        {showUdhaarInput && (
+          <div className="bg-white p-2.5 rounded-xl border border-amber-200 flex items-center gap-2 animate-in fade-in">
+            <Wallet className="w-4 h-4 text-amber-600 flex-shrink-0" />
             <input
               type="number"
               value={customUdhaarAmount || ''}
               onChange={(e) => setCustomUdhaarAmount && setCustomUdhaarAmount(e.target.value)}
-              placeholder="Mark Udhaar (₹)"
-              className="w-full pl-8 pr-2.5 py-2 bg-amber-50/50 border border-amber-200 rounded-xl font-bold text-amber-900 focus:outline-none focus:border-amber-600"
+              placeholder="Enter Udhaar Amount (₹)"
+              className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-900 focus:outline-none focus:border-amber-600"
             />
           </div>
-        </div>
-      </div>
-
-      {/* DIRECT VOICE / TEXT INPUT TO AI */}
-      <div className="bg-white p-3.5 rounded-2xl border-2 border-emerald-500 shadow-soft-lg flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-extrabold text-emerald-900 uppercase tracking-wider">
-            Talk or Type Directly to AI
-          </span>
-          <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-            Natural Speech LLM NLU
-          </span>
-        </div>
-
-        <form onSubmit={handleTextSubmit} className="flex gap-2">
-          <input
-            type="text"
-            value={spokenText}
-            onChange={(e) => setSpokenText(e.target.value)}
-            placeholder="e.g. 'Ravi ji 20 packet Maggi, 2 Parle-G, 250 udhar'..."
-            className="flex-1 min-h-[46px] px-3.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 text-xs shadow-inner focus:border-emerald-600 focus:bg-white focus:outline-none"
-          />
-          <button
-            type="submit"
-            disabled={!spokenText.trim() || isSubmitting}
-            className="px-4 min-h-[46px] bg-emerald-600 hover:bg-emerald-700 text-white font-heading font-extrabold text-xs rounded-xl flex items-center gap-1.5 shadow-emerald-glow disabled:opacity-50 flex-shrink-0"
-          >
-            <Sparkles className="w-4 h-4 text-emerald-200" />
-            <span>Create AI Bill</span>
-          </button>
-        </form>
-
-        {/* Optional Voice Note Recorder */}
-        <div className="border-t border-slate-100 pt-2">
-          <VoiceRecorder onAudioRecorded={(blob) => setRecordedAudioBlob(blob)} />
-        </div>
+        )}
       </div>
 
       {/* CAMERA SNAP SECTION FOR VISUAL BILLING */}
