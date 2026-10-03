@@ -1,10 +1,11 @@
+import json
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
 from config import settings
 from db import get_supabase
 from services.billing_service import create_smart_bill, record_udhaar_payment, get_or_create_customer
-from services.voice_service import process_voice_audio
+from services.voice_service import process_voice_audio, parse_transcript_with_gemini
 from services.vision_service import extract_label_from_image
 
 router = APIRouter(prefix="/api/v1", tags=["AI Billing & Udhaar Engine"])
@@ -30,11 +31,13 @@ async def create_bill_endpoint(
     shop_id: str = Form(settings.DEFAULT_SHOP_ID),
     customer_name: Optional[str] = Form(None),
     customer_phone: Optional[str] = Form(None),
-    is_udhaar: bool = Form(False)
+    is_udhaar: bool = Form(False),
+    text_prompt: Optional[str] = Form(None),
+    items_json: Optional[str] = Form(None)
 ):
     """
-    1-Tap / 1-Voice AI Billing Engine:
-    - Parses Image (Gemini Flash Vision) + Voice Note (Groq Whisper NLU).
+    1-Tap / 1-Voice / 1-Text AI Billing Engine:
+    - Parses Image (Gemini Flash Vision) + Voice Note (Groq Whisper NLU) + Spoken/Typed Text Prompt.
     - Extracts Customer Name, Products, Quantities, Units.
     - Matches items against shop inventory & DEDUCTS STOCK.
     - Updates Customer Udhaar ledger if unpaid.
@@ -43,10 +46,11 @@ async def create_bill_endpoint(
     image_bytes = await image.read() if image else None
     audio_bytes = await audio.read() if audio else None
 
-    # Parse voice note if provided
     voice_data = {}
     if audio_bytes:
         voice_data = await process_voice_audio(audio_bytes, filename=audio.filename or "voice.webm")
+    elif text_prompt and text_prompt.strip():
+        voice_data = await parse_transcript_with_gemini(text_prompt.strip())
 
     # If action is UDHAAR_PAYMENT (e.g. "Ravi paid 500 rupees")
     if voice_data.get("action_type") == "UDHAAR_PAYMENT" and voice_data.get("udhaar_payment_amount"):
@@ -60,7 +64,16 @@ async def create_bill_endpoint(
     eff_is_udhaar = is_udhaar or voice_data.get("is_udhaar", False)
 
     # Determine Items
-    items = voice_data.get("items") or []
+    items = []
+    if items_json:
+        try:
+            items = json.loads(items_json)
+        except Exception:
+            items = []
+
+    if not items:
+        items = voice_data.get("items") or []
+
     if not items and image_bytes:
         ocr_data = await extract_label_from_image(image_bytes) or {}
         if ocr_data.get("product_name"):
@@ -85,6 +98,21 @@ async def create_bill_endpoint(
         items=items,
         is_udhaar=eff_is_udhaar,
         image_bytes=image_bytes
+    )
+
+@router.post("/create-bill-direct")
+async def create_bill_direct_endpoint(req: ManualBillRequest):
+    """
+    Direct JSON API endpoint for generating bills from structured frontend forms.
+    Deducts stock automatically and updates customer Udhaar.
+    """
+    return await create_smart_bill(
+        shop_id=req.shop_id,
+        customer_name=req.customer_name,
+        customer_phone=req.customer_phone,
+        items=req.items,
+        is_udhaar=req.is_udhaar,
+        custom_paid_amount=req.custom_paid_amount
     )
 
 @router.post("/udhaar/payment")

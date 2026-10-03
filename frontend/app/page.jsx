@@ -37,6 +37,16 @@ export default function Home() {
   // Dukandar Quick Mode: 'BILL' (Customer Bill) | 'UDHAAR_PAYMENT' (Receive Payment) | 'RESTOCK' (Maal Aaya) | 'DAMAGE' (Kharab)
   const [quickMode, setQuickMode] = useState('BILL');
 
+  // Quick Bill Creator State
+  const [billTextPrompt, setBillTextPrompt] = useState('');
+  const [quickCustomerName, setQuickCustomerName] = useState('');
+  const [selectedProductId, setSelectedProductId] = useState('');
+  const [quickProductName, setQuickProductName] = useState('');
+  const [quickQty, setQuickQty] = useState(1);
+  const [quickPrice, setQuickPrice] = useState(10);
+  const [quickIsUdhaar, setQuickIsUdhaar] = useState(false);
+  const [isSubmittingBill, setIsSubmittingBill] = useState(false);
+
   // Workflow Steps: 'camera' -> 'snapped' -> 'analyzing' -> 'results'
   const [workflowStep, setWorkflowStep] = useState('camera');
   const [recordedAudioBlob, setRecordedAudioBlob] = useState(null);
@@ -96,6 +106,96 @@ export default function Home() {
 
   const totalItems = products.reduce((sum, item) => sum + (parseFloat(item.quantity) || 0), 0);
   const stockValue = products.reduce((sum, item) => sum + ((parseFloat(item.selling_price) || 0) * (parseFloat(item.quantity) || 0)), 0);
+
+  // Handle text prompt bill submission (e.g. "Ravi took 2 Maggi")
+  const handleTextPromptBillSubmit = async (e) => {
+    if (e) e.preventDefault();
+    if (!billTextPrompt.trim() || isSubmittingBill) return;
+
+    setIsSubmittingBill(true);
+    setSuccessToast(null);
+    setGeneratedBill(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('text_prompt', billTextPrompt.trim());
+      formData.append('shop_id', shopId);
+      formData.append('mode', 'BILL');
+
+      const res = await fetch(`${API_BASE}/create-bill`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (res.ok) {
+        const billData = await res.json();
+        const toastMsg = billData.ai_response || `Bill created successfully!`;
+        setSuccessToast(toastMsg);
+        speakAIVoicePrompt(toastMsg);
+
+        if (billData.items) {
+          setGeneratedBill(billData);
+        }
+
+        setBillTextPrompt('');
+        await fetchInventory();
+        await fetchCustomers();
+      }
+    } catch (err) {
+      console.error('Error creating bill from text prompt:', err);
+    } finally {
+      setIsSubmittingBill(false);
+    }
+  };
+
+  // Handle direct item selection bill submission
+  const handleDirectQuickBillSubmit = async () => {
+    const prodName = quickProductName || 'Tic-Tac';
+    const price = parseFloat(quickPrice) || 10.0;
+    const qty = parseFloat(quickQty) || 1.0;
+
+    setIsSubmittingBill(true);
+    setSuccessToast(null);
+    setGeneratedBill(null);
+
+    try {
+      const payload = {
+        shop_id: shopId,
+        customer_name: quickCustomerName.trim() || null,
+        items: [{ product_name: prodName, quantity: qty, selling_price: price, unit: 'packet' }],
+        is_udhaar: quickIsUdhaar,
+      };
+
+      const res = await fetch(`${API_BASE}/create-bill-direct`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        const billData = await res.json();
+        const toastMsg = billData.ai_response || `Bill created successfully!`;
+        setSuccessToast(toastMsg);
+        speakAIVoicePrompt(toastMsg);
+
+        if (billData.items) {
+          setGeneratedBill(billData);
+        }
+
+        setQuickCustomerName('');
+        setQuickProductName('');
+        setSelectedProductId('');
+        setQuickQty(1);
+        setQuickPrice(10);
+        await fetchInventory();
+        await fetchCustomers();
+      }
+    } catch (err) {
+      console.error('Error creating direct bill:', err);
+    } finally {
+      setIsSubmittingBill(false);
+    }
+  };
 
   // STEP 1: CAPTURE PHOTO SNAP
   const handleTakeSnap = () => {
@@ -399,6 +499,121 @@ export default function Home() {
               </button>
             </div>
           </div>
+
+          {/* INSTANT QUICK BILL CREATOR PANEL */}
+          {quickMode === 'BILL' && (
+            <div className="bg-emerald-50/80 border-2 border-emerald-500 p-3.5 rounded-2xl flex flex-col gap-3 shadow-sm animate-in fade-in">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 font-heading font-extrabold text-sm text-emerald-900">
+                  <Receipt className="w-4 h-4 text-emerald-600" />
+                  <span>Instant Bill / Bikri (Type or Pick Items)</span>
+                </div>
+                <span className="text-[10px] font-extrabold text-emerald-700 bg-white px-2 py-0.5 rounded-full border border-emerald-200">
+                  Auto Stock Deduction
+                </span>
+              </div>
+
+              {/* Option A: Spoken / Typed Text Input */}
+              <form onSubmit={handleTextPromptBillSubmit} className="flex gap-2">
+                <input
+                  type="text"
+                  value={billTextPrompt}
+                  onChange={(e) => setBillTextPrompt(e.target.value)}
+                  placeholder="Type bill e.g. 'Ravi took 2 Maggi packets' or '3 Tic-Tac'..."
+                  className="flex-1 min-h-[44px] px-3.5 bg-white border border-emerald-300 rounded-xl font-bold text-slate-900 text-xs shadow-inner focus:border-emerald-600 focus:outline-none"
+                />
+                <button
+                  type="submit"
+                  disabled={!billTextPrompt.trim() || isSubmittingBill}
+                  className="px-4 min-h-[44px] bg-emerald-600 hover:bg-emerald-700 text-white font-heading font-extrabold text-xs rounded-xl flex items-center gap-1.5 shadow-emerald-glow disabled:opacity-50 flex-shrink-0"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>AI Bill</span>
+                </button>
+              </form>
+
+              {/* Option B: Quick Pick Customer & Inventory Item */}
+              <div className="bg-white p-3 rounded-xl border border-emerald-200 flex flex-col gap-2.5">
+                <span className="text-[11px] font-bold text-slate-600">Or Select Customer & Inventory Item:</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    value={quickCustomerName}
+                    onChange={(e) => setQuickCustomerName(e.target.value)}
+                    placeholder="Customer Name (e.g. Ravi)"
+                    className="w-full min-h-[40px] px-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 text-xs"
+                  />
+                  <select
+                    value={selectedProductId}
+                    onChange={(e) => {
+                      setSelectedProductId(e.target.value);
+                      const p = products.find(prod => prod.id === e.target.value);
+                      if (p) {
+                        setQuickProductName(p.name);
+                        setQuickPrice(p.selling_price);
+                      }
+                    }}
+                    className="w-full min-h-[40px] px-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 text-xs"
+                  >
+                    <option value="">Select Item from Shop...</option>
+                    {products.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} (Stock: {p.quantity} | ₹{p.selling_price})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 items-center">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-slate-500">Qty</label>
+                    <input
+                      type="number"
+                      min="0.1"
+                      step="1"
+                      value={quickQty}
+                      onChange={(e) => setQuickQty(parseFloat(e.target.value) || 1)}
+                      className="w-full min-h-[38px] px-3 bg-slate-50 border border-slate-200 rounded-xl font-extrabold text-slate-900 text-xs"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-slate-500">Price (₹)</label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      value={quickPrice}
+                      onChange={(e) => setQuickPrice(parseFloat(e.target.value) || 0)}
+                      className="w-full min-h-[38px] px-3 bg-slate-50 border border-slate-200 rounded-xl font-extrabold text-slate-900 text-xs"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-slate-500">Payment</label>
+                    <button
+                      type="button"
+                      onClick={() => setQuickIsUdhaar(!quickIsUdhaar)}
+                      className={`w-full min-h-[38px] rounded-xl font-extrabold text-xs transition-all ${
+                        quickIsUdhaar
+                          ? 'bg-amber-500 text-white shadow-sm'
+                          : 'bg-emerald-600 text-white shadow-sm'
+                      }`}
+                    >
+                      {quickIsUdhaar ? 'Udhaar' : 'Nagad (Cash)'}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleDirectQuickBillSubmit}
+                  disabled={isSubmittingBill}
+                  className="w-full min-h-[44px] mt-1 bg-emerald-600 hover:bg-emerald-700 text-white font-heading font-extrabold text-xs rounded-xl flex items-center justify-center gap-2 shadow-emerald-glow disabled:opacity-50"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Create Bill & Deduct Stock</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* STEP 1: CAMERA VIEWPORT */}
           {workflowStep === 'camera' && (
