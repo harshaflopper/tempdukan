@@ -1,28 +1,41 @@
 import React from 'react';
-import { Receipt, Package, UserCheck } from 'lucide-react';
+import { PackagePlus, Receipt, Package, UserCheck } from 'lucide-react';
 
 export default function SegmentTabs({ activeTab, setActiveTab }) {
   return (
-    <nav className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
+    <nav className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 gap-1">
       <button
         type="button"
-        onClick={() => setActiveTab('onboard')}
-        className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-extrabold transition-all ${
-          activeTab === 'onboard'
-            ? 'bg-emerald-600 text-white shadow-sm'
+        onClick={() => setActiveTab('add_inventory')}
+        className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-xs font-extrabold transition-all ${
+          activeTab === 'add_inventory'
+            ? 'bg-emerald-700 text-white shadow-sm'
+            : 'text-slate-600 hover:text-slate-900 font-bold'
+        }`}
+      >
+        <PackagePlus className="w-4 h-4" />
+        <span>Add Inventory</span>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => setActiveTab('ai_bill')}
+        className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-xs font-extrabold transition-all ${
+          activeTab === 'ai_bill'
+            ? 'bg-emerald-700 text-white shadow-sm'
             : 'text-slate-600 hover:text-slate-900 font-bold'
         }`}
       >
         <Receipt className="w-4 h-4" />
-        <span>AI Bill Window</span>
+        <span>AI Bill</span>
       </button>
 
       <button
         type="button"
         onClick={() => setActiveTab('inventory')}
-        className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-extrabold transition-all ${
+        className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-xs font-extrabold transition-all ${
           activeTab === 'inventory'
-            ? 'bg-emerald-600 text-white shadow-sm'
+            ? 'bg-emerald-700 text-white shadow-sm'
             : 'text-slate-600 hover:text-slate-900 font-bold'
         }`}
       >
@@ -33,9 +46,9 @@ export default function SegmentTabs({ activeTab, setActiveTab }) {
       <button
         type="button"
         onClick={() => setActiveTab('udhaar')}
-        className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-extrabold transition-all ${
+        className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-xs font-extrabold transition-all ${
           activeTab === 'udhaar'
-            ? 'bg-emerald-600 text-white shadow-sm'
+            ? 'bg-emerald-700 text-white shadow-sm'
             : 'text-slate-600 hover:text-slate-900 font-bold'
         }`}
       >

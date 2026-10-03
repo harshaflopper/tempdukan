@@ -9,7 +9,7 @@ import VoiceRecorder from '../components/VoiceRecorder';
 import InventoryCatalog from '../components/InventoryCatalog';
 import UdhaarLedger from '../components/UdhaarLedger';
 import AIBillWindow from '../components/AIBillWindow';
-import { Sparkles, Camera, CheckCircle2, Check, Volume2, RefreshCw, ShoppingCart, Package, AlertTriangle, Hash, Receipt, Wallet, UserCheck } from 'lucide-react';
+import AddInventoryWindow from '../components/AddInventoryWindow';
 
 const API_BASE = 'http://localhost:8000/api/v1';
 
@@ -30,22 +30,15 @@ const speakAIVoicePrompt = (text) => {
 };
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState('onboard');
+  const [activeTab, setActiveTab] = useState('add_inventory');
   const [shopId] = useState('SHOP001');
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
 
-  // Dukandar Quick Mode: 'BILL' (Customer Bill) | 'UDHAAR_PAYMENT' (Receive Payment) | 'RESTOCK' (Maal Aaya) | 'DAMAGE' (Kharab)
-  const [quickMode, setQuickMode] = useState('BILL');
+  // Dukandar Quick Mode for Stock Add: 'RESTOCK' (Maal Aaya) | 'DAMAGE' (Kharab) | 'CORRECTION' (Ginti)
+  const [quickMode, setQuickMode] = useState('RESTOCK');
 
   // Quick Bill Creator State
-  const [billTextPrompt, setBillTextPrompt] = useState('');
-  const [quickCustomerName, setQuickCustomerName] = useState('');
-  const [selectedProductId, setSelectedProductId] = useState('');
-  const [quickProductName, setQuickProductName] = useState('');
-  const [quickQty, setQuickQty] = useState(1);
-  const [quickPrice, setQuickPrice] = useState(10);
-  const [quickIsUdhaar, setQuickIsUdhaar] = useState(false);
   const [isSubmittingBill, setIsSubmittingBill] = useState(false);
 
   // Workflow Steps: 'camera' -> 'snapped' -> 'analyzing' -> 'results'
@@ -56,7 +49,7 @@ export default function Home() {
   const [successToast, setSuccessToast] = useState(null);
   const [generatedBill, setGeneratedBill] = useState(null);
 
-  // Result & Form State
+  // Result & Form State for Product Confirmation
   const [aiResult, setAiResult] = useState(null);
   const [manualForm, setManualForm] = useState({
     is_existing: false,
@@ -69,7 +62,7 @@ export default function Home() {
     quantity: 1,
     unit: 'packet',
     expiry_date: '',
-    action_type: 'BILL',
+    action_type: 'RESTOCK',
     is_udhaar: false,
   });
 
@@ -108,7 +101,7 @@ export default function Home() {
   const totalItems = products.reduce((sum, item) => sum + (parseFloat(item.quantity) || 0), 0);
   const stockValue = products.reduce((sum, item) => sum + ((parseFloat(item.selling_price) || 0) * (parseFloat(item.quantity) || 0)), 0);
 
-  // Handle text prompt bill submission (e.g. "Ravi took 2 Maggi")
+  // Handle text prompt bill submission in AI Bill Window
   const handleTextPromptBillSubmitWithText = async (text) => {
     if (!text || isSubmittingBill) return;
 
@@ -173,8 +166,85 @@ export default function Home() {
     }, 'image/jpeg', 0.90);
   };
 
-  // STEP 2: PROCESS & ANALYZE BILL / PRODUCT WITH AI
-  const handleAnalyzeProduct = async () => {
+  // STEP 2: PROCESS & ANALYZE PRODUCT FOR ADDING TO INVENTORY (/api/v1/onboard)
+  const handleAnalyzeProductOnboard = async () => {
+    setWorkflowStep('analyzing');
+    setSuccessToast(null);
+
+    try {
+      const formData = new FormData();
+      if (photoBlob) formData.append('image', photoBlob, 'photo.jpg');
+      if (recordedAudioBlob) formData.append('audio', recordedAudioBlob, 'voice.webm');
+      formData.append('shop_id', shopId);
+      formData.append('mode', quickMode);
+
+      const res = await fetch(`${API_BASE}/onboard`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setAiResult(data);
+        setManualForm({
+          is_existing: data.is_existing || false,
+          id: data.existing_product?.id || null,
+          name: data.product_name || 'New Item',
+          selling_price: data.printed_mrp || 10,
+          current_quantity: data.existing_product?.quantity || 0,
+          add_quantity: 1,
+          quantity: (data.existing_product?.quantity || 0) + 1,
+          unit: data.existing_product?.unit || 'packet',
+          expiry_date: data.expiry_date || '',
+          action_type: quickMode,
+        });
+
+        const msg = data.ai_response || `Recognized ${data.product_name}`;
+        setSuccessToast(msg);
+        speakAIVoicePrompt(msg);
+
+        setWorkflowStep('results');
+        await fetchInventory();
+        return;
+      }
+    } catch (err) {
+      console.error('Error onboarding product:', err);
+    }
+    setWorkflowStep('camera');
+  };
+
+  // SAVE CONFIRMED PRODUCT TO DB INVENTORY
+  const handleSaveConfirmedProduct = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/confirm-product`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shop_id: shopId,
+          product: {
+            name: manualForm.name,
+            selling_price: parseFloat(manualForm.selling_price) || 10,
+            quantity: parseFloat(manualForm.add_quantity) || 1,
+            unit: manualForm.unit || 'packet',
+            expiry_date: manualForm.expiry_date || null
+          }
+        })
+      });
+
+      if (res.ok) {
+        const msg = `Saved '${manualForm.name}' to shop inventory!`;
+        setSuccessToast(msg);
+        speakAIVoicePrompt(msg);
+        await fetchInventory();
+        handleResetToCamera();
+      }
+    } catch (err) {
+      console.error('Error saving product:', err);
+    }
+  };
+
+  // PROCESS BILL FROM PHOTO SNAP AND/OR VOICE IN AI BILL TAB
+  const handleAnalyzeBill = async () => {
     setWorkflowStep('analyzing');
     setSuccessToast(null);
     setGeneratedBill(null);
@@ -184,7 +254,7 @@ export default function Home() {
       if (photoBlob) formData.append('image', photoBlob, 'photo.jpg');
       if (recordedAudioBlob) formData.append('audio', recordedAudioBlob, 'voice.webm');
       formData.append('shop_id', shopId);
-      formData.append('mode', quickMode);
+      formData.append('mode', 'BILL');
 
       const res = await fetch(`${API_BASE}/create-bill`, {
         method: 'POST',
@@ -211,7 +281,7 @@ export default function Home() {
         return;
       }
     } catch (err) {
-      const toastMsg = "Done! Processed transaction.";
+      const toastMsg = "Processed billing transaction.";
       setSuccessToast(toastMsg);
       speakAIVoicePrompt(toastMsg);
       await fetchInventory();
@@ -250,7 +320,7 @@ export default function Home() {
     }
   };
 
-  // Reset to Step 1 (Camera Viewport)
+  // Reset to Camera Viewport
   const handleResetToCamera = () => {
     setWorkflowStep('camera');
     setCapturedPhotoUrl(null);
@@ -269,7 +339,31 @@ export default function Home() {
       <SegmentTabs activeTab={activeTab} setActiveTab={setActiveTab} />
       <StatsSummary totalItems={totalItems} stockValue={stockValue} matchedCount={products.length} />
 
-      {activeTab === 'onboard' && (
+      {activeTab === 'add_inventory' && (
+        <main className="flex flex-col gap-4">
+          <AddInventoryWindow
+            videoRef={videoRef}
+            canvasRef={canvasRef}
+            workflowStep={workflowStep}
+            capturedPhotoUrl={capturedPhotoUrl}
+            recordedAudioBlob={recordedAudioBlob}
+            setRecordedAudioBlob={setRecordedAudioBlob}
+            handleTakeSnap={handleTakeSnap}
+            handleAnalyzeProductOnboard={handleAnalyzeProductOnboard}
+            handleResetToCamera={handleResetToCamera}
+            quickMode={quickMode}
+            setQuickMode={setQuickMode}
+            aiResult={aiResult}
+            manualForm={manualForm}
+            setManualForm={setManualForm}
+            handleSaveConfirmedProduct={handleSaveConfirmedProduct}
+            isSubmitting={isSubmittingBill}
+            successToast={successToast}
+          />
+        </main>
+      )}
+
+      {activeTab === 'ai_bill' && (
         <main className="flex flex-col gap-4">
           <AIBillWindow
             videoRef={videoRef}
@@ -279,7 +373,7 @@ export default function Home() {
             recordedAudioBlob={recordedAudioBlob}
             setRecordedAudioBlob={setRecordedAudioBlob}
             handleTakeSnap={handleTakeSnap}
-            handleAnalyzeProduct={handleAnalyzeProduct}
+            handleAnalyzeProduct={handleAnalyzeBill}
             handleResetToCamera={handleResetToCamera}
             successToast={successToast}
             generatedBill={generatedBill}
