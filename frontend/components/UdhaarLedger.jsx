@@ -1,9 +1,9 @@
 import React, { useState, useRef } from 'react';
-import { Search, UserCheck, Wallet, MessageSquare, History, CheckCircle2, X, Radio, Calendar, List, Send, AlertCircle, Mic, Volume2 } from 'lucide-react';
+import { Search, UserCheck, Wallet, MessageSquare, History, CheckCircle2, X, Radio, Calendar, List, Send, AlertCircle, Mic, Volume2, Phone, User, CreditCard } from 'lucide-react';
 
 export default function UdhaarLedger({ customers = [], onRecordPayment, onSendReminder }) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [activeCustomerModal, setActiveCustomerModal] = useState(null);
   const [historyCustomer, setHistoryCustomer] = useState(null);
   const [historyData, setHistoryData] = useState(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -19,7 +19,6 @@ export default function UdhaarLedger({ customers = [], onRecordPayment, onSendRe
   const [latestBroadcastResult, setLatestBroadcastResult] = useState(null);
 
   // Udhaar Voice Assistant State
-  const [voicePromptText, setVoicePromptText] = useState('');
   const [isProcessingUdhaarVoice, setIsProcessingUdhaarVoice] = useState(false);
   const [udhaarAiResponse, setUdhaarAiResponse] = useState(null);
   const [isRecordingUdhaarVoice, setIsRecordingUdhaarVoice] = useState(false);
@@ -45,8 +44,7 @@ export default function UdhaarLedger({ customers = [], onRecordPayment, onSendRe
   };
 
   const handleUdhaarVoiceSubmit = async (customPrompt = null, audioBlob = null) => {
-    const promptToUse = customPrompt !== null ? customPrompt : voicePromptText;
-    if (!promptToUse.trim() && !audioBlob) return;
+    if (!customPrompt && !audioBlob) return;
 
     setIsProcessingUdhaarVoice(true);
     setUdhaarAiResponse(null);
@@ -56,8 +54,8 @@ export default function UdhaarLedger({ customers = [], onRecordPayment, onSendRe
       if (audioBlob) {
         formData.append('audio', audioBlob, 'voice.webm');
       }
-      if (promptToUse.trim()) {
-        formData.append('text_prompt', promptToUse.trim());
+      if (customPrompt) {
+        formData.append('text_prompt', customPrompt);
       }
       formData.append('shop_id', 'SHOP001');
 
@@ -80,7 +78,6 @@ export default function UdhaarLedger({ customers = [], onRecordPayment, onSendRe
       console.error('Error in Udhaar voice assistant:', e);
     } finally {
       setIsProcessingUdhaarVoice(false);
-      setVoicePromptText('');
     }
   };
 
@@ -127,11 +124,11 @@ export default function UdhaarLedger({ customers = [], onRecordPayment, onSendRe
 
   const handlePaySubmit = (e) => {
     e.preventDefault();
-    if (!selectedCustomer || !paymentAmount) return;
+    if (!activeCustomerModal || !paymentAmount) return;
     if (onRecordPayment) {
-      onRecordPayment(selectedCustomer, parseFloat(paymentAmount));
+      onRecordPayment(activeCustomerModal, parseFloat(paymentAmount));
     }
-    setSelectedCustomer(null);
+    setActiveCustomerModal(null);
     setPaymentAmount('');
   };
 
@@ -241,81 +238,76 @@ export default function UdhaarLedger({ customers = [], onRecordPayment, onSendRe
         </div>
       </div>
 
-      {/* UDHAAR AI VOICE CHATBOT ASSISTANT CARD */}
-      <div className="bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-900 text-white rounded-2xl p-4 shadow-lg flex flex-col gap-3 border border-emerald-700/60">
+      {/* PURE VOICE ASSISTANT CARD (NO TEXT TYPE OPTION - 1-TAP VOICE ONLY) */}
+      <div className="bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-900 text-white rounded-2xl p-4 shadow-lg flex flex-col gap-3.5 border border-emerald-700/60">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-emerald-500/20 rounded-xl border border-emerald-400/30">
+            <div className="p-2.5 bg-emerald-500/20 rounded-xl border border-emerald-400/30">
               <Mic className={`w-5 h-5 text-emerald-400 ${isRecordingUdhaarVoice ? 'animate-ping text-red-400' : ''}`} />
             </div>
             <div>
               <h3 className="font-heading font-extrabold text-base text-white flex items-center gap-2">
                 <span>AI Kirana Voice Assistant</span>
-                <span className="bg-emerald-500/30 text-emerald-300 text-[10px] px-2 py-0.5 rounded-full font-mono uppercase font-bold border border-emerald-400/40">LLM NLU</span>
+                <span className="bg-emerald-500/30 text-emerald-300 text-[10px] px-2 py-0.5 rounded-full font-mono uppercase font-bold border border-emerald-400/40">1-Tap Voice</span>
               </h3>
-              <p className="text-xs text-emerald-200">Speak or type natural Kirana Udhaar commands (Hindi / Hinglish / English)</p>
+              <p className="text-xs text-emerald-200">Tap the mic button and speak natural Udhaar commands in Hindi</p>
             </div>
           </div>
         </div>
 
-        {/* Quick Action Suggestion Chips */}
-        <div className="flex flex-wrap items-center gap-2 text-xs">
+        {/* 1-Tap Mic Button */}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={toggleMicRecording}
+            disabled={isProcessingUdhaarVoice}
+            className={`w-full py-3.5 px-4 rounded-xl font-heading font-extrabold text-sm flex items-center justify-center gap-2.5 transition-all shadow-md active:scale-95 ${
+              isRecordingUdhaarVoice
+                ? 'bg-red-600 text-white animate-pulse shadow-red-900/50'
+                : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-900/50'
+            }`}
+          >
+            <Mic className="w-5 h-5" />
+            <span>
+              {isRecordingUdhaarVoice
+                ? 'Listening to Voice Note... (Tap to Stop)'
+                : isProcessingUdhaarVoice
+                ? 'AI NLU Processing...'
+                : 'Tap to Speak Udhaar Command'}
+            </span>
+          </button>
+        </div>
+
+        {/* Quick Voice Suggestion Chips */}
+        <div className="flex flex-wrap items-center gap-2 text-xs pt-1 border-t border-emerald-800/60">
+          <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider">Examples:</span>
           <button
             type="button"
             onClick={() => handleUdhaarVoiceSubmit("किसका ज़्यादा अभी उधार है")}
-            className="px-3 py-1.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 rounded-xl text-emerald-200 font-medium transition-all active:scale-95"
+            className="px-3 py-1.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 rounded-xl text-emerald-200 font-medium transition-all active:scale-95 flex items-center gap-1.5"
           >
-            🎙️ "किसका ज़्यादा अभी उधार है"
+            <Mic className="w-3.5 h-3.5 text-emerald-400" />
+            <span>"किसका ज़्यादा अभी उधार है"</span>
           </button>
           <button
             type="button"
             onClick={() => handleUdhaarVoiceSubmit("Ravi का फिर से 200 उधार है")}
-            className="px-3 py-1.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 rounded-xl text-emerald-200 font-medium transition-all active:scale-95"
+            className="px-3 py-1.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 rounded-xl text-emerald-200 font-medium transition-all active:scale-95 flex items-center gap-1.5"
           >
-            🎙️ "Ravi का फिर से 200 उधार है"
+            <Mic className="w-3.5 h-3.5 text-emerald-400" />
+            <span>"Ravi का फिर से 200 उधार है"</span>
           </button>
           <button
             type="button"
             onClick={() => handleUdhaarVoiceSubmit("इन्होंने 200 रुपए उधार दिया है")}
-            className="px-3 py-1.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 rounded-xl text-emerald-200 font-medium transition-all active:scale-95"
+            className="px-3 py-1.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 rounded-xl text-emerald-200 font-medium transition-all active:scale-95 flex items-center gap-1.5"
           >
-            🎙️ "इन्होंने 200 रुपए उधार दिया है"
+            <Mic className="w-3.5 h-3.5 text-emerald-400" />
+            <span>"इन्होंने 200 रुपए उधार दिया है"</span>
           </button>
         </div>
 
-        {/* Input Bar & Mic Button */}
-        <form onSubmit={(e) => { e.preventDefault(); handleUdhaarVoiceSubmit(); }} className="flex items-center gap-2">
-          <input
-            type="text"
-            value={voicePromptText}
-            onChange={(e) => setVoicePromptText(e.target.value)}
-            placeholder="Speak or type: e.g. 'किसका ज़्यादा अभी उधार है' or 'Ravi का फिर से 200 उधार है'..."
-            className="w-full min-h-[44px] px-3.5 bg-slate-900/90 border border-emerald-700/60 rounded-xl text-sm font-medium text-white placeholder-slate-400 focus:outline-none focus:border-emerald-400"
-          />
-          <button
-            type="button"
-            onClick={toggleMicRecording}
-            className={`min-h-[44px] px-3.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-md ${
-              isRecordingUdhaarVoice
-                ? 'bg-red-600 text-white animate-pulse'
-                : 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
-            }`}
-          >
-            <Mic className="w-4 h-4" />
-            <span>{isRecordingUdhaarVoice ? 'Listening...' : 'Voice'}</span>
-          </button>
-
-          <button
-            type="submit"
-            disabled={isProcessingUdhaarVoice || !voicePromptText.trim()}
-            className="min-h-[44px] px-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-1.5"
-          >
-            <Send className="w-4 h-4" />
-            <span>{isProcessingUdhaarVoice ? 'Processing...' : 'Ask AI'}</span>
-          </button>
-        </form>
-
-        {/* AI Spoken Audio Response Card */}
+        {/* AI Audio Response Banner */}
         {udhaarAiResponse && (
           <div className="bg-emerald-950/90 border border-emerald-500/50 p-3 rounded-xl flex items-center justify-between gap-3 text-xs text-emerald-100 animate-in fade-in">
             <div className="flex items-center gap-2.5">
@@ -420,25 +412,27 @@ export default function UdhaarLedger({ customers = [], onRecordPayment, onSendRe
           filteredCustomers.map((c, idx) => {
             const balance = parseFloat(c.udhaar_balance || 0);
             return (
-              <div key={c.id || idx} className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-xl gap-3">
-                <div className="flex flex-col gap-0.5">
-                  <div className="flex items-center gap-2">
-                    <span className="font-extrabold text-sm text-slate-900">{c.name}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleFetchHistory(c)}
-                      className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md hover:bg-emerald-100 flex items-center gap-1"
-                    >
-                      <History className="w-3 h-3" />
-                      <span>History</span>
-                    </button>
+              <div
+                key={c.id || idx}
+                onClick={() => setActiveCustomerModal(c)}
+                className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 bg-slate-50 hover:bg-emerald-50/60 border border-slate-200 hover:border-emerald-300 rounded-xl gap-3 cursor-pointer transition-all shadow-sm"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-emerald-100 text-emerald-800 rounded-xl font-bold">
+                    <User className="w-5 h-5" />
                   </div>
-                  <span className="text-xs text-slate-500 font-medium">
-                    Phone: {c.phone || 'N/A'}
-                  </span>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+                      {c.name}
+                    </span>
+                    <span className="text-xs text-slate-500 font-medium flex items-center gap-1">
+                      <Phone className="w-3 h-3 text-slate-400" />
+                      {c.phone || 'Phone not set'}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2.5 justify-between sm:justify-end">
+                <div className="flex items-center gap-3 justify-between sm:justify-end">
                   <div className="flex flex-col items-end">
                     <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Udhaar</span>
                     <span className={`font-heading font-extrabold text-base ${balance > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
@@ -446,34 +440,146 @@ export default function UdhaarLedger({ customers = [], onRecordPayment, onSendRe
                     </span>
                   </div>
 
-                  {balance > 0 && (
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handleSendReminderClick(c)}
-                        disabled={sendingReminderId === c.id}
-                        className="p-2 bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 font-bold rounded-lg text-xs shadow-sm flex items-center gap-1"
-                        title="Send Vendal SMS Reminder"
-                      >
-                        <MessageSquare className="w-3.5 h-3.5 text-blue-600" />
-                        <span className="hidden sm:inline">SMS</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setSelectedCustomer(c)}
-                        className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm"
-                      >
-                        Receive Payment
-                      </button>
-                    </div>
-                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setActiveCustomerModal(c); }}
+                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm flex items-center gap-1.5"
+                  >
+                    <span>Manage Udhaar & Contact</span>
+                  </button>
                 </div>
               </div>
             );
           })
         )}
       </div>
+
+      {/* CUSTOMER ACTION & COMMUNICATION POPUP MODAL */}
+      {activeCustomerModal && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex justify-center items-end sm:items-center z-50 p-3">
+          <div className="w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-2xl p-5 flex flex-col gap-4 animate-in slide-in-from-bottom duration-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-emerald-100 text-emerald-800 rounded-xl">
+                  <User className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-heading font-extrabold text-lg text-slate-900">
+                    {activeCustomerModal.name}
+                  </h3>
+                  <span className="text-xs font-semibold text-slate-500">Customer Udhaar Profile</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveCustomerModal(null)}
+                className="text-slate-400 hover:text-slate-700 p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Outstanding Balance Banner */}
+            <div className="bg-red-50 border border-red-200 p-3.5 rounded-xl flex items-center justify-between">
+              <div>
+                <span className="text-xs font-extrabold text-red-800 uppercase tracking-wider block">Current Pending Udhaar</span>
+                <span className="text-[11px] text-red-600 font-medium">Kirana Credit Balance</span>
+              </div>
+              <span className="font-heading font-extrabold text-2xl text-red-600">
+                ₹{parseFloat(activeCustomerModal.udhaar_balance || 0).toLocaleString()}
+              </span>
+            </div>
+
+            {/* Direct Call & Mobile Communication Card */}
+            <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl flex flex-col gap-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-extrabold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <Phone className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Mobile Contact</span>
+                </span>
+                <span className="text-xs font-mono font-bold text-slate-900">
+                  {activeCustomerModal.phone || 'No phone registered'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {activeCustomerModal.phone ? (
+                  <a
+                    href={`tel:${activeCustomerModal.phone}`}
+                    className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm flex items-center justify-center gap-1.5 text-center"
+                  >
+                    <Phone className="w-3.5 h-3.5" />
+                    <span>Call Customer</span>
+                  </a>
+                ) : (
+                  <button
+                    disabled
+                    className="py-2.5 px-3 bg-slate-200 text-slate-400 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-not-allowed"
+                  >
+                    <Phone className="w-3.5 h-3.5" />
+                    <span>No Phone</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => handleSendReminderClick(activeCustomerModal)}
+                  disabled={sendingReminderId === activeCustomerModal.id || !activeCustomerModal.phone}
+                  className="py-2.5 px-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-sm flex items-center justify-center gap-1.5"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>Send SMS Reminder</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Receive Udhaar Payment Section */}
+            <form onSubmit={handlePaySubmit} className="flex flex-col gap-2.5 pt-1">
+              <label className="text-xs font-extrabold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                <CreditCard className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Receive Payment Amount (₹)</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  step="1"
+                  required
+                  min="1"
+                  max={activeCustomerModal.udhaar_balance}
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(e.target.value)}
+                  placeholder="e.g. 200"
+                  className="w-full min-h-[44px] px-3.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 text-base focus:border-emerald-600 focus:bg-white focus:outline-none"
+                />
+                <button
+                  type="submit"
+                  disabled={!paymentAmount}
+                  className="min-h-[44px] px-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-heading font-extrabold rounded-xl text-xs flex-shrink-0 shadow-md"
+                >
+                  Record Payment
+                </button>
+              </div>
+            </form>
+
+            {/* Transaction History Button */}
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  const cust = activeCustomerModal;
+                  setActiveCustomerModal(null);
+                  handleFetchHistory(cust);
+                }}
+                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5"
+              >
+                <History className="w-3.5 h-3.5 text-slate-600" />
+                <span>View Full Bills & Ledger History</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* WEEKLY SMS BROADCAST LOGS MODAL */}
       {showBroadcastLogsModal && (
@@ -632,57 +738,6 @@ export default function UdhaarLedger({ customers = [], onRecordPayment, onSendRe
                 </div>
               </div>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* Receive Payment Modal */}
-      {selectedCustomer && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-end sm:items-center z-50 p-3">
-          <div className="w-full max-w-sm bg-white rounded-2xl border border-slate-200 shadow-2xl p-4 flex flex-col gap-4 animate-in slide-in-from-bottom duration-200">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <h3 className="font-heading font-bold text-base text-slate-900">
-                Receive Udhaar Payment
-              </h3>
-              <button
-                type="button"
-                onClick={() => setSelectedCustomer(null)}
-                className="text-xs font-bold text-slate-400 hover:text-slate-700"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl flex flex-col gap-1">
-              <span className="text-xs font-bold text-amber-900">Customer: {selectedCustomer.name}</span>
-              <span className="text-xs text-amber-800">
-                Current Udhaar Balance: <strong>₹{selectedCustomer.udhaar_balance}</strong>
-              </span>
-            </div>
-
-            <form onSubmit={handlePaySubmit} className="flex flex-col gap-3">
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-semibold text-slate-500">Amount Received (₹)</label>
-                <input
-                  type="number"
-                  step="1"
-                  required
-                  min="1"
-                  max={selectedCustomer.udhaar_balance}
-                  value={paymentAmount}
-                  onChange={(e) => setPaymentAmount(e.target.value)}
-                  placeholder="Enter payment amount e.g. 500"
-                  className="w-full min-h-[44px] px-3.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 text-base"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="w-full min-h-[48px] bg-emerald-600 hover:bg-emerald-700 text-white font-heading font-extrabold rounded-xl text-base shadow-emerald-glow"
-              >
-                Record Payment & Send Wendal SMS Receipt
-              </button>
-            </form>
           </div>
         </div>
       )}
