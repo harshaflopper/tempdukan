@@ -1,5 +1,7 @@
 import time
 import re
+import json
+import httpx
 from typing import Dict, Any, List, Optional
 from db import get_supabase
 from config import settings
@@ -616,11 +618,10 @@ async def broadcast_weekly_udhaar_reminders(shop_id: str = settings.DEFAULT_SHOP
 
 async def get_weekly_broadcast_logs(shop_id: str = settings.DEFAULT_SHOP_ID) -> Dict[str, Any]:
     """
-    Fetches past weekly Udhaar SMS broadcast logs & recipient delivery statuses.
+    Fetches recipient logs and delivery reports for weekly Udhaar SMS broadcasts.
     """
     supabase = get_supabase()
     logs = []
-
     if supabase:
         try:
             res = supabase.table("weekly_sms_broadcasts").select("*").eq("shop_id", shop_id).order("sent_at", desc=True).execute()
@@ -629,3 +630,250 @@ async def get_weekly_broadcast_logs(shop_id: str = settings.DEFAULT_SHOP_ID) -> 
             print(f"Error fetching weekly broadcast logs: {e}")
 
     return {"broadcast_logs": logs}
+
+async def add_udhaar_debt(
+    shop_id: str,
+    customer_name: str,
+    amount: float,
+    notes: str = "Voice Udhaar addition",
+    send_sms: bool = True
+) -> Dict[str, Any]:
+    """
+    Directly adds Udhaar debt to a customer profile.
+    e.g. "Ravi ka phir se 200 udhaar hai" -> Balance increases by 200.
+    """
+    customer = await get_or_create_customer(shop_id=shop_id, name=customer_name)
+    if not customer:
+        return {"success": False, "ai_response": f"Customer profile '{customer_name}' creation failed."}
+
+    old_balance = float(customer.get("udhaar_balance", 0.0))
+    new_balance = round(old_balance + float(amount), 2)
+
+    supabase = get_supabase()
+    if supabase:
+        try:
+            supabase.table("customers").update({"udhaar_balance": new_balance}).eq("id", customer["id"]).execute()
+            supabase.table("udhaar_logs").insert({
+                "shop_id": shop_id,
+                "customer_id": customer["id"],
+                "type": "UDHAAR_ADDED",
+                "amount": float(amount),
+                "balance_after": new_balance,
+                "notes": notes
+            }).execute()
+        except Exception as e:
+            print(f"Error adding udhaar debt: {e}")
+
+    sms_res = None
+    if send_sms and customer.get("phone"):
+        sms_res = await send_udhaar_reminder_sms(
+            to_phone=customer["phone"],
+            customer_name=customer["name"],
+            udhaar_balance=new_balance
+        )
+
+    sms_msg = " SMS sent." if sms_res and sms_res.get("success") else ""
+    c_name = customer.get("name") or customer_name
+    ai_msg = f"{c_name} ke khate me ₹{amount} Udhaar add kar diya! Purana Udhaar ₹{old_balance} se badhkar ab ₹{new_balance} ho gaya hai.{sms_msg}"
+
+    return {
+        "success": True,
+        "customer_name": c_name,
+        "old_balance": old_balance,
+        "new_balance": new_balance,
+        "amount_added": amount,
+        "sms_status": sms_res.get("status") if sms_res else "SKIPPED",
+        "ai_response": ai_msg
+    }
+
+async def process_udhaar_voice_assistant(
+    audio_bytes: Optional[bytes] = None,
+    text_prompt: Optional[str] = None,
+    shop_id: str = settings.DEFAULT_SHOP_ID
+) -> Dict[str, Any]:
+    """
+    Intelligent Voice & Natural Language LLM Engine for Udhaar Ledger:
+    Handles voice notes & typed queries like:
+    1. "किसका ज़्यादा अभी उधार है" -> Identifies highest debt customers.
+    2. "Ravi का फिर से 200 उधार है" -> Adds ₹200 Udhaar to Ravi's profile.
+    3. "इन्होंने 200 रुपए उधार दिया है" / "Ravi paid 200" -> Subtracts ₹200 from Ravi's Udhaar.
+    4. "Ravi ka kitna udhaar baaki hai" -> Checks balance for Ravi.
+    """
+    transcript = ""
+    if audio_bytes and settings.GROQ_API_KEY:
+        try:
+            url = "https://api.groq.com/openai/v1/audio/transcriptions"
+            headers = {"Authorization": f"Bearer {settings.GROQ_API_KEY}"}
+            files = {"file": ("voice.webm", audio_bytes, "audio/webm")}
+            data = {"model": "whisper-large-v3-turbo", "language": "hi"}
+            
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                res = await client.post(url, headers=headers, files=files, data=data)
+                if res.status_code == 200:
+                    transcript = res.json().get("text", "")
+        except Exception as e:
+            print(f"Groq Whisper Exception in Udhaar Assistant: {e}")
+
+    if not transcript and text_prompt:
+        transcript = text_prompt.strip()
+
+    if not transcript and not audio_bytes:
+        return {"success": False, "ai_response": "Voice or text command missing."}
+
+    # Fetch customer ledger context for LLM prompt
+    supabase = get_supabase()
+    customers_list = []
+    if supabase:
+        try:
+            res = supabase.table("customers").select("*").eq("shop_id", shop_id).order("udhaar_balance", desc=True).execute()
+            customers_list = res.data or []
+        except Exception as e:
+            print(f"Error fetching customers for LLM prompt: {e}")
+
+    ledger_summary = "\n".join([
+        f"- Name: {c['name']}, Phone: {c.get('phone') or 'N/A'}, Udhaar Balance: ₹{float(c.get('udhaar_balance', 0))}"
+        for c in customers_list
+    ]) or "No customers registered yet."
+
+    parsed_intent = None
+    customer_name = None
+    amount = None
+
+    if settings.GEMINI_API_KEY:
+        models_to_try = [
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-3-flash",
+            "gemini-3.1-flash-lite",
+            "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-3.6-flash",
+            "gemini-3.7-flash",
+            "gemini-3.8-flash"
+        ]
+
+        prompt = f"""
+        You are an AI Voice & NLU Assistant for an Indian Kirana Shopkeeper (Dukandar).
+        User spoken / typed command (in Hindi/Hinglish/English):
+        "{transcript}"
+
+        Current Udhaar Ledger Profiles in Shop:
+        {ledger_summary}
+
+        Determine the exact intent and parameters:
+        Intents:
+        1. "HIGHEST_UDHAAR_QUERY": Spoken examples: "किसका ज़्यादा अभी उधार है", "सबसे ज़्यादा उधार किसका है", "who has highest udhaar", "zyada udhaar kiska hai".
+        2. "ADD_UDHAAR": Spoken examples: "Ravi का फिर से 200 उधार है", "Ravi ka 200 udhaar add karo", "Ravi 200 rupees udhaar", "Ravi udhaar 200".
+        3. "RECORD_PAYMENT": Spoken examples: "इन्होंने 200 रुपए उधार दिया है", "Ravi ne 200 jama kar diye", "Ravi paid 200", "Ravi 200 rupee diya".
+        4. "CHECK_BALANCE": Spoken examples: "Ravi ka udhaar kitna hai", "Ravi balance check", "Ravi ka kitna baaki hai".
+
+        Return ONLY JSON:
+        {{
+          "intent": "HIGHEST_UDHAAR_QUERY" | "ADD_UDHAAR" | "RECORD_PAYMENT" | "CHECK_BALANCE" | "UNKNOWN",
+          "customer_name": "Extracted Customer Name or matched name from ledger",
+          "amount": float or null
+        }}
+        """
+
+        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for model in models_to_try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={settings.GEMINI_API_KEY}"
+                try:
+                    res = await client.post(url, json=payload)
+                    if res.status_code == 200:
+                        candidates = res.json().get("candidates", [])
+                        if candidates:
+                            parts = candidates[0].get("content", {}).get("parts", [])
+                            if parts:
+                                txt = parts[0].get("text", "")
+                                clean_json = txt.replace("```json", "").replace("```", "").strip()
+                                p_data = json.loads(clean_json)
+                                parsed_intent = p_data.get("intent")
+                                customer_name = p_data.get("customer_name")
+                                amount = float(p_data["amount"]) if p_data.get("amount") is not None else None
+                                break
+                except Exception as e:
+                    print(f"Gemini model {model} Udhaar NLU notice: {e}")
+
+    # Fallback Regex Intent Detection
+    if not parsed_intent:
+        t_low = transcript.lower()
+        if any(k in t_low for k in ["kiska", "zyada", "jyada", "sabse", "highest", "top defaulter", "batao udhaar", "किसका"]):
+            parsed_intent = "HIGHEST_UDHAAR_QUERY"
+        elif any(k in t_low for k in ["phir se", "fir se", "add", "aur udhaar", "phir udhaar", "फिर से"]):
+            parsed_intent = "ADD_UDHAAR"
+        elif any(k in t_low for k in ["jama", "paid", "diye", "dene", "pay", "diya", "chuka", "उधार दिया"]):
+            parsed_intent = "RECORD_PAYMENT"
+        elif any(k in t_low for k in ["kitna", "balance", "baaki"]):
+            parsed_intent = "CHECK_BALANCE"
+        else:
+            parsed_intent = "HIGHEST_UDHAAR_QUERY" if "udhaar" in t_low else "UNKNOWN"
+
+        amt_m = re.search(r'(\d+(?:\.\d+)?)', transcript)
+        if amt_m and not amount:
+            amount = float(amt_m.group(1))
+
+        if not customer_name:
+            c_m = re.search(r'([a-zA-Z]+)(?:\s+ka|\s+ki|\s+ne|\s+ji)?', transcript, re.IGNORECASE)
+            if c_m and c_m.group(1).lower() not in ("kiska", "zyada", "sabse", "phir", "add", "jama", "paid"):
+                customer_name = c_m.group(1).capitalize()
+
+    # EXECUTE INTENT
+    if parsed_intent == "HIGHEST_UDHAAR_QUERY":
+        defaulters = [c for c in customers_list if float(c.get("udhaar_balance", 0)) > 0]
+        defaulters.sort(key=lambda x: float(x.get("udhaar_balance", 0)), reverse=True)
+
+        if not defaulters:
+            ai_msg = "Aapke dukan me kisi ka bhi Udhaar baaki nahi hai! Sabhi khate clear hain."
+        elif len(defaulters) == 1:
+            top = defaulters[0]
+            ai_msg = f"Sabse zyada Udhaar {top['name']} ji ka hai: ₹{float(top['udhaar_balance']):.2f}."
+        else:
+            top1 = defaulters[0]
+            top2 = defaulters[1]
+            tot_def = len(defaulters)
+            tot_amt = sum(float(c.get("udhaar_balance", 0)) for c in defaulters)
+            ai_msg = f"Sabse zyada Udhaar {top1['name']} ji ka hai (₹{float(top1['udhaar_balance']):.2f}), uske baad {top2['name']} ji ka (₹{float(top2['udhaar_balance']):.2f}) hai. Kul {tot_def} logo ka ₹{tot_amt:.2f} Udhaar baaki hai."
+
+        return {
+            "success": True,
+            "intent": "HIGHEST_UDHAAR_QUERY",
+            "transcript": transcript,
+            "ai_response": ai_msg,
+            "defaulters": defaulters
+        }
+
+    elif parsed_intent == "ADD_UDHAAR" and customer_name and amount:
+        res = await add_udhaar_debt(shop_id=shop_id, customer_name=customer_name, amount=amount)
+        res["transcript"] = transcript
+        res["intent"] = "ADD_UDHAAR"
+        return res
+
+    elif parsed_intent == "RECORD_PAYMENT" and customer_name and amount:
+        res = await record_udhaar_payment(shop_id=shop_id, customer_name=customer_name, amount=amount)
+        res["transcript"] = transcript
+        res["intent"] = "RECORD_PAYMENT"
+        return res
+
+    elif parsed_intent == "CHECK_BALANCE" and customer_name:
+        cust = await get_or_create_customer(shop_id=shop_id, name=customer_name)
+        bal = float(cust.get("udhaar_balance", 0)) if cust else 0.0
+        c_n = cust.get("name") if cust else customer_name
+        ai_msg = f"{c_n} ji ka kul Udhaar ₹{bal:.2f} baaki hai."
+        return {
+            "success": True,
+            "intent": "CHECK_BALANCE",
+            "transcript": transcript,
+            "customer_name": c_n,
+            "balance": bal,
+            "ai_response": ai_msg
+        }
+
+    return {
+        "success": True,
+        "intent": parsed_intent or "GENERAL",
+        "transcript": transcript,
+        "ai_response": f"Udhaar voice note samjh gaya: '{transcript}'. System updated."
+    }

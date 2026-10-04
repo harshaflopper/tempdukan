@@ -1,7 +1,5 @@
-'use client';
-
-import React, { useState } from 'react';
-import { Search, UserCheck, Wallet, MessageSquare, History, CheckCircle2, X, Radio, Calendar, List, Send, AlertCircle } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Search, UserCheck, Wallet, MessageSquare, History, CheckCircle2, X, Radio, Calendar, List, Send, AlertCircle, Mic, Volume2 } from 'lucide-react';
 
 export default function UdhaarLedger({ customers = [], onRecordPayment, onSendReminder }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -20,7 +18,104 @@ export default function UdhaarLedger({ customers = [], onRecordPayment, onSendRe
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
   const [latestBroadcastResult, setLatestBroadcastResult] = useState(null);
 
+  // Udhaar Voice Assistant State
+  const [voicePromptText, setVoicePromptText] = useState('');
+  const [isProcessingUdhaarVoice, setIsProcessingUdhaarVoice] = useState(false);
+  const [udhaarAiResponse, setUdhaarAiResponse] = useState(null);
+  const [isRecordingUdhaarVoice, setIsRecordingUdhaarVoice] = useState(false);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+
   const API_BASE = 'http://localhost:8000/api/v1';
+
+  // Text-to-speech helper
+  const speakAIVoice = (text) => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 0.95;
+        utterance.pitch = 1.0;
+        utterance.lang = 'hi-IN';
+        window.speechSynthesis.speak(utterance);
+      } catch (e) {
+        console.warn('Speech synthesis error:', e);
+      }
+    }
+  };
+
+  const handleUdhaarVoiceSubmit = async (customPrompt = null, audioBlob = null) => {
+    const promptToUse = customPrompt !== null ? customPrompt : voicePromptText;
+    if (!promptToUse.trim() && !audioBlob) return;
+
+    setIsProcessingUdhaarVoice(true);
+    setUdhaarAiResponse(null);
+
+    try {
+      const formData = new FormData();
+      if (audioBlob) {
+        formData.append('audio', audioBlob, 'voice.webm');
+      }
+      if (promptToUse.trim()) {
+        formData.append('text_prompt', promptToUse.trim());
+      }
+      formData.append('shop_id', 'SHOP001');
+
+      const res = await fetch(`${API_BASE}/udhaar/voice-assistant`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const responseMsg = data.ai_response || 'Voice command processed successfully!';
+        setUdhaarAiResponse(responseMsg);
+        speakAIVoice(responseMsg);
+
+        if (onRecordPayment) {
+          onRecordPayment(null, 0); // Trigger list refresh
+        }
+      }
+    } catch (e) {
+      console.error('Error in Udhaar voice assistant:', e);
+    } finally {
+      setIsProcessingUdhaarVoice(false);
+      setVoicePromptText('');
+    }
+  };
+
+  const toggleMicRecording = async () => {
+    if (isRecordingUdhaarVoice) {
+      if (mediaRecorderRef.current) {
+        mediaRecorderRef.current.stop();
+      }
+      setIsRecordingUdhaarVoice(false);
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioChunksRef.current = [];
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+
+        mediaRecorder.onstop = () => {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          handleUdhaarVoiceSubmit(null, audioBlob);
+          stream.getTracks().forEach(track => track.stop());
+        };
+
+        mediaRecorder.start();
+        setIsRecordingUdhaarVoice(true);
+      } catch (err) {
+        console.error('Mic access denied:', err);
+      }
+    }
+  };
 
   const filteredCustomers = customers.filter(c =>
     (c.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -144,6 +239,94 @@ export default function UdhaarLedger({ customers = [], onRecordPayment, onSendRe
           <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Outstanding</span>
           <span className="font-heading font-extrabold text-base text-red-600">₹{totalOutstanding.toLocaleString()}</span>
         </div>
+      </div>
+
+      {/* UDHAAR AI VOICE CHATBOT ASSISTANT CARD */}
+      <div className="bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-900 text-white rounded-2xl p-4 shadow-lg flex flex-col gap-3 border border-emerald-700/60">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-emerald-500/20 rounded-xl border border-emerald-400/30">
+              <Mic className={`w-5 h-5 text-emerald-400 ${isRecordingUdhaarVoice ? 'animate-ping text-red-400' : ''}`} />
+            </div>
+            <div>
+              <h3 className="font-heading font-extrabold text-base text-white flex items-center gap-2">
+                <span>AI Kirana Voice Assistant</span>
+                <span className="bg-emerald-500/30 text-emerald-300 text-[10px] px-2 py-0.5 rounded-full font-mono uppercase font-bold border border-emerald-400/40">LLM NLU</span>
+              </h3>
+              <p className="text-xs text-emerald-200">Speak or type natural Kirana Udhaar commands (Hindi / Hinglish / English)</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Action Suggestion Chips */}
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <button
+            type="button"
+            onClick={() => handleUdhaarVoiceSubmit("किसका ज़्यादा अभी उधार है")}
+            className="px-3 py-1.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 rounded-xl text-emerald-200 font-medium transition-all active:scale-95"
+          >
+            🎙️ "किसका ज़्यादा अभी उधार है"
+          </button>
+          <button
+            type="button"
+            onClick={() => handleUdhaarVoiceSubmit("Ravi का फिर से 200 उधार है")}
+            className="px-3 py-1.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 rounded-xl text-emerald-200 font-medium transition-all active:scale-95"
+          >
+            🎙️ "Ravi का फिर से 200 उधार है"
+          </button>
+          <button
+            type="button"
+            onClick={() => handleUdhaarVoiceSubmit("इन्होंने 200 रुपए उधार दिया है")}
+            className="px-3 py-1.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 rounded-xl text-emerald-200 font-medium transition-all active:scale-95"
+          >
+            🎙️ "इन्होंने 200 रुपए उधार दिया है"
+          </button>
+        </div>
+
+        {/* Input Bar & Mic Button */}
+        <form onSubmit={(e) => { e.preventDefault(); handleUdhaarVoiceSubmit(); }} className="flex items-center gap-2">
+          <input
+            type="text"
+            value={voicePromptText}
+            onChange={(e) => setVoicePromptText(e.target.value)}
+            placeholder="Speak or type: e.g. 'किसका ज़्यादा अभी उधार है' or 'Ravi का फिर से 200 उधार है'..."
+            className="w-full min-h-[44px] px-3.5 bg-slate-900/90 border border-emerald-700/60 rounded-xl text-sm font-medium text-white placeholder-slate-400 focus:outline-none focus:border-emerald-400"
+          />
+          <button
+            type="button"
+            onClick={toggleMicRecording}
+            className={`min-h-[44px] px-3.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-md ${
+              isRecordingUdhaarVoice
+                ? 'bg-red-600 text-white animate-pulse'
+                : 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
+            }`}
+          >
+            <Mic className="w-4 h-4" />
+            <span>{isRecordingUdhaarVoice ? 'Listening...' : 'Voice'}</span>
+          </button>
+
+          <button
+            type="submit"
+            disabled={isProcessingUdhaarVoice || !voicePromptText.trim()}
+            className="min-h-[44px] px-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-1.5"
+          >
+            <Send className="w-4 h-4" />
+            <span>{isProcessingUdhaarVoice ? 'Processing...' : 'Ask AI'}</span>
+          </button>
+        </form>
+
+        {/* AI Spoken Audio Response Card */}
+        {udhaarAiResponse && (
+          <div className="bg-emerald-950/90 border border-emerald-500/50 p-3 rounded-xl flex items-center justify-between gap-3 text-xs text-emerald-100 animate-in fade-in">
+            <div className="flex items-center gap-2.5">
+              <Volume2 className="w-4 h-4 text-emerald-400 flex-shrink-0 animate-bounce" />
+              <span className="font-semibold">{udhaarAiResponse}</span>
+            </div>
+            <button type="button" onClick={() => setUdhaarAiResponse(null)} className="text-emerald-400 hover:text-white p-1">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* WEEKLY AUTOMATED UDHAAR SMS BROADCAST CARD */}

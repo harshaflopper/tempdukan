@@ -13,7 +13,8 @@ from services.billing_service import (
     attach_phone_to_customer_and_bill,
     get_sales_analytics,
     broadcast_weekly_udhaar_reminders,
-    get_weekly_broadcast_logs
+    get_weekly_broadcast_logs,
+    process_udhaar_voice_assistant
 )
 from services.sms_service import send_udhaar_reminder_sms
 from services.voice_service import process_voice_audio, parse_transcript_with_gemini
@@ -285,3 +286,22 @@ async def get_broadcast_logs_endpoint(shop_id: str = settings.DEFAULT_SHOP_ID):
     Fetches recipient logs and delivery reports for weekly Udhaar SMS broadcasts.
     """
     return await get_weekly_broadcast_logs(shop_id=shop_id)
+
+@router.post("/udhaar/voice-assistant")
+async def udhaar_voice_assistant_endpoint(
+    audio: Optional[UploadFile] = File(None),
+    text_prompt: Optional[str] = Form(None),
+    shop_id: str = Form(settings.DEFAULT_SHOP_ID)
+):
+    """
+    Intelligent LLM Voice Assistant for Kirana Udhaar Ledger:
+    - Answers queries like "किसका ज़्यादा अभी उधार है"
+    - Processes voice additions e.g. "Ravi का फिर से 200 उधार है"
+    - Processes voice payments e.g. "इन्होंने 200 रुपए उधार दिया है" / "Ravi paid 200"
+    """
+    audio_bytes = await audio.read() if audio else None
+    return await process_udhaar_voice_assistant(
+        audio_bytes=audio_bytes,
+        text_prompt=text_prompt,
+        shop_id=shop_id
+    )
