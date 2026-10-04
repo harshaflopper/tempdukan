@@ -698,6 +698,8 @@ async def process_udhaar_voice_assistant(
     2. "Ravi का फिर से 200 उधार है" -> Adds ₹200 Udhaar to Ravi's profile.
     3. "इन्होंने 200 रुपए उधार दिया है" / "Ravi paid 200" -> Subtracts ₹200 from Ravi's Udhaar.
     4. "Ravi ka kitna udhaar baaki hai" -> Checks balance for Ravi.
+    5. "सबको SMS भेज दो" -> Triggers SMS Broadcast to all defaulters.
+    6. "SMS report dikhao" -> Shows delivery status report logs.
     """
     transcript = ""
     if audio_bytes and settings.GROQ_API_KEY:
@@ -766,10 +768,12 @@ async def process_udhaar_voice_assistant(
         2. "ADD_UDHAAR": Spoken examples: "Ravi का फिर से 200 उधार है", "Ravi ka 200 udhaar add karo", "Ravi 200 rupees udhaar", "Ravi udhaar 200".
         3. "RECORD_PAYMENT": Spoken examples: "इन्होंने 200 रुपए उधार दिया है", "Ravi ne 200 jama kar diye", "Ravi paid 200", "Ravi 200 rupee diya".
         4. "CHECK_BALANCE": Spoken examples: "Ravi ka udhaar kitna hai", "Ravi balance check", "Ravi ka kitna baaki hai".
+        5. "BROADCAST_WEEKLY_SMS": Spoken examples: "सबको SMS भेज दो", "सबको मैसेज भेज दो", "send sms to all", "sabko message bhej do", "udhaar reminder bhej do".
+        6. "SHOW_BROADCAST_LOGS": Spoken examples: "SMS report dikhao", "delivery logs dikhao", "message kinko gaya", "show sms logs".
 
         Return ONLY JSON:
         {{
-          "intent": "HIGHEST_UDHAAR_QUERY" | "ADD_UDHAAR" | "RECORD_PAYMENT" | "CHECK_BALANCE" | "UNKNOWN",
+          "intent": "HIGHEST_UDHAAR_QUERY" | "ADD_UDHAAR" | "RECORD_PAYMENT" | "CHECK_BALANCE" | "BROADCAST_WEEKLY_SMS" | "SHOW_BROADCAST_LOGS" | "UNKNOWN",
           "customer_name": "Extracted Customer Name or matched name from ledger",
           "amount": float or null
         }}
@@ -800,7 +804,11 @@ async def process_udhaar_voice_assistant(
     # Fallback Regex Intent Detection
     if not parsed_intent:
         t_low = transcript.lower()
-        if any(k in t_low for k in ["kiska", "zyada", "jyada", "sabse", "highest", "top defaulter", "batao udhaar", "किसका"]):
+        if any(k in t_low for k in ["sabko", "sab ko", "सबको", "bhej do", "send sms", "send message", "broadcast"]):
+            parsed_intent = "BROADCAST_WEEKLY_SMS"
+        elif any(k in t_low for k in ["report", "logs", "delivery", "kinko gaya", "history sms"]):
+            parsed_intent = "SHOW_BROADCAST_LOGS"
+        elif any(k in t_low for k in ["kiska", "zyada", "jyada", "sabse", "highest", "top defaulter", "batao udhaar", "किसका"]):
             parsed_intent = "HIGHEST_UDHAAR_QUERY"
         elif any(k in t_low for k in ["phir se", "fir se", "add", "aur udhaar", "phir udhaar", "फिर से"]):
             parsed_intent = "ADD_UDHAAR"
@@ -817,11 +825,40 @@ async def process_udhaar_voice_assistant(
 
         if not customer_name:
             c_m = re.search(r'([a-zA-Z]+)(?:\s+ka|\s+ki|\s+ne|\s+ji)?', transcript, re.IGNORECASE)
-            if c_m and c_m.group(1).lower() not in ("kiska", "zyada", "sabse", "phir", "add", "jama", "paid"):
+            if c_m and c_m.group(1).lower() not in ("kiska", "zyada", "sabse", "phir", "add", "jama", "paid", "sabko", "bhej"):
                 customer_name = c_m.group(1).capitalize()
 
     # EXECUTE INTENT
-    if parsed_intent == "HIGHEST_UDHAAR_QUERY":
+    if parsed_intent == "BROADCAST_WEEKLY_SMS":
+        b_res = await broadcast_weekly_udhaar_reminders(shop_id=shop_id)
+        sent = b_res.get("total_sent", 0)
+        tot_udh = b_res.get("total_udhaar_reminded", 0.0)
+        ai_msg = f"Sabhi Udhaar grahakon ko Vendel SMS payment reminder bhej diya gaya hai! Total {sent} logo ko ₹{tot_udh:.2f} Udhaar ka SMS bhej diya gaya."
+        return {
+            "success": True,
+            "intent": "BROADCAST_WEEKLY_SMS",
+            "transcript": transcript,
+            "ai_response": ai_msg,
+            "broadcast_result": b_res
+        }
+
+    elif parsed_intent == "SHOW_BROADCAST_LOGS":
+        l_res = await get_weekly_broadcast_logs(shop_id=shop_id)
+        logs = l_res.get("broadcast_logs", [])
+        if not logs:
+            ai_msg = "Abhi tak koi SMS broadcast log record nahi hua hai."
+        else:
+            last = logs[0]
+            ai_msg = f"Pichhle broadcast me {last.get('total_sent', 0)} logo ko SMS bheja gaya tha, kul Udhaar: ₹{last.get('total_udhaar_reminded', 0.0)}."
+        return {
+            "success": True,
+            "intent": "SHOW_BROADCAST_LOGS",
+            "transcript": transcript,
+            "ai_response": ai_msg,
+            "logs": logs
+        }
+
+    elif parsed_intent == "HIGHEST_UDHAAR_QUERY":
         defaulters = [c for c in customers_list if float(c.get("udhaar_balance", 0)) > 0]
         defaulters.sort(key=lambda x: float(x.get("udhaar_balance", 0)), reverse=True)
 

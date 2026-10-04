@@ -305,6 +305,14 @@ export default function UdhaarLedger({ customers = [], onRecordPayment, onSendRe
             <Mic className="w-3.5 h-3.5 text-emerald-400" />
             <span>"इन्होंने 200 रुपए उधार दिया है"</span>
           </button>
+          <button
+            type="button"
+            onClick={() => handleUdhaarVoiceSubmit("सबको SMS भेज दो")}
+            className="px-3 py-1.5 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700/60 rounded-xl text-emerald-200 font-medium transition-all active:scale-95 flex items-center gap-1.5"
+          >
+            <Mic className="w-3.5 h-3.5 text-emerald-400" />
+            <span>"सबको SMS भेज दो"</span>
+          </button>
         </div>
 
         {/* AI Audio Response Banner */}
