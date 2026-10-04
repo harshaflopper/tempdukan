@@ -3,7 +3,8 @@
 import React, { useState } from 'react';
 import CameraScanner from './CameraScanner';
 import VoiceRecorder from './VoiceRecorder';
-import { Camera, Sparkles, CheckCircle2, PackagePlus, RefreshCw, AlertTriangle, Check } from 'lucide-react';
+import ExpiryAlertBanner from './ExpiryAlertBanner';
+import { Camera, Sparkles, CheckCircle2, PackagePlus, RefreshCw, AlertTriangle, Check, BookOpen, Calendar } from 'lucide-react';
 
 export default function AddInventoryWindow({
   videoRef,
@@ -22,20 +23,41 @@ export default function AddInventoryWindow({
   setManualForm,
   handleSaveConfirmedProduct,
   isSubmitting,
-  successToast
+  successToast,
+  onOpenSalesModal,
+  expiryData,
+  onOpenExpiryModal
 }) {
   return (
     <div className="flex flex-col gap-4 animate-in fade-in">
       {/* Header Banner */}
-      <div className="bg-gradient-to-r from-emerald-800 to-emerald-950 text-white p-4 rounded-2xl border border-emerald-700 shadow-md flex flex-col gap-1">
-        <div className="flex items-center gap-2 font-heading font-extrabold text-base">
-          <PackagePlus className="w-5 h-5 text-emerald-400" />
-          <span>Add Inventory & Scan Stock</span>
+      <div className="bg-gradient-to-r from-emerald-800 to-emerald-950 text-white p-4 rounded-2xl border border-emerald-700 shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2 font-heading font-extrabold text-base">
+            <PackagePlus className="w-5 h-5 text-emerald-400" />
+            <span>Add Inventory & Scan Stock</span>
+          </div>
+          <p className="text-xs text-emerald-200 font-medium">
+            Point camera at product to automatically detect name, printed MRP, and add or update shop inventory.
+          </p>
         </div>
-        <p className="text-xs text-emerald-200 font-medium">
-          Point camera at product to automatically detect name, printed MRP, and add or update shop inventory.
-        </p>
+
+        {onOpenExpiryModal && (
+          <button
+            type="button"
+            onClick={onOpenExpiryModal}
+            className="w-full sm:w-auto px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-extrabold text-xs rounded-xl flex items-center justify-center gap-2 transition-all shadow-sm shrink-0"
+          >
+            <Calendar className="w-4 h-4 text-slate-950" />
+            <span>AI Expiry Clearance</span>
+          </button>
+        )}
       </div>
+
+      {/* Expiry Alert Notification Banner */}
+      {expiryData && (
+        <ExpiryAlertBanner expiryData={expiryData} onOpenExpiryModal={onOpenExpiryModal} />
+      )}
 
       {/* Quick Action Selection Pills */}
       <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-extrabold gap-1">

@@ -10,6 +10,8 @@ import InventoryCatalog from '../components/InventoryCatalog';
 import UdhaarLedger from '../components/UdhaarLedger';
 import AIBillWindow from '../components/AIBillWindow';
 import AddInventoryWindow from '../components/AddInventoryWindow';
+import SalesAnalytics from '../components/SalesAnalytics';
+import ExpiryTrackerModal from '../components/ExpiryTrackerModal';
 
 const API_BASE = 'http://localhost:8000/api/v1';
 
@@ -34,6 +36,11 @@ export default function Home() {
   const [shopId] = useState('SHOP001');
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
+
+  // AI Expiry Tracking & Clearance State
+  const [expiryData, setExpiryData] = useState(null);
+  const [showExpiryModal, setShowExpiryModal] = useState(false);
+  const [isExpiryLoading, setIsExpiryLoading] = useState(false);
 
   // Customer Profile, Discount, Udhaar & SMS State for Billing
   const [customerName, setCustomerName] = useState('');
@@ -79,6 +86,7 @@ export default function Home() {
   useEffect(() => {
     fetchInventory();
     fetchCustomers();
+    fetchExpiryAnalysis();
   }, []);
 
   async function fetchInventory() {
@@ -102,6 +110,45 @@ export default function Home() {
       }
     } catch (e) {
       console.warn('Backend offline mode');
+    }
+  }
+
+  async function fetchExpiryAnalysis() {
+    setIsExpiryLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/expiry/analysis?shop_id=${shopId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setExpiryData(data);
+      }
+    } catch (e) {
+      console.warn('Backend offline mode for expiry');
+    } finally {
+      setIsExpiryLoading(false);
+    }
+  }
+
+  async function handleApplyExpiryDiscount(productId, suggestedPrice) {
+    try {
+      const res = await fetch(`${API_BASE}/expiry/apply-discount`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shop_id: shopId,
+          product_id: productId,
+          suggested_price: parseFloat(suggestedPrice)
+        })
+      });
+
+      if (res.ok) {
+        const msg = `Applied AI Clearance Price ₹${suggestedPrice}!`;
+        setSuccessToast(msg);
+        speakAIVoicePrompt(msg);
+        await fetchInventory();
+        await fetchExpiryAnalysis();
+      }
+    } catch (e) {
+      console.error('Error applying clearance price:', e);
     }
   }
 
@@ -173,6 +220,7 @@ export default function Home() {
 
         setWorkflowStep('results');
         await fetchInventory();
+        await fetchExpiryAnalysis();
         return;
       }
     } catch (err) {
@@ -204,6 +252,7 @@ export default function Home() {
         setSuccessToast(msg);
         speakAIVoicePrompt(msg);
         await fetchInventory();
+        await fetchExpiryAnalysis();
         handleResetToCamera();
       }
     } catch (err) {
@@ -251,6 +300,7 @@ export default function Home() {
 
         await fetchInventory();
         await fetchCustomers();
+        await fetchExpiryAnalysis();
 
         setWorkflowStep('camera');
         setCapturedPhotoUrl(null);
@@ -264,10 +314,55 @@ export default function Home() {
       speakAIVoicePrompt(toastMsg);
       await fetchInventory();
       await fetchCustomers();
+      await fetchExpiryAnalysis();
       setWorkflowStep('camera');
       setCapturedPhotoUrl(null);
       setPhotoBlob(null);
       setRecordedAudioBlob(null);
+    } finally {
+      setIsSubmittingBill(false);
+    }
+  };
+
+  // 1-Tap Loose Micro-Item Quick Cash Sale Handler (e.g. ₹2 Toffee, ₹5 Chocolate for kids)
+  const handleQuickLooseSale = async (itemName, price) => {
+    setIsSubmittingBill(true);
+    setSuccessToast(null);
+    setGeneratedBill(null);
+
+    try {
+      const res = await fetch(`${API_BASE}/create-bill-direct`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shop_id: shopId,
+          customer_name: customerName || 'Walk-in Cash Customer',
+          customer_phone: customerPhone || null,
+          items: [{
+            product_name: itemName,
+            quantity: 1.0,
+            unit: 'piece',
+            selling_price: parseFloat(price)
+          }],
+          is_udhaar: false,
+          discount_amount: parseFloat(discountAmount) || 0,
+          custom_udhaar_amount: parseFloat(customUdhaarAmount) || 0,
+          send_sms: false
+        })
+      });
+
+      if (res.ok) {
+        const billData = await res.json();
+        const toastMsg = billData.ai_response || `Cash Sale: ${itemName} (₹${price}) completed!`;
+        setSuccessToast(toastMsg);
+        speakAIVoicePrompt(toastMsg);
+        setGeneratedBill(billData);
+        await fetchInventory();
+        await fetchCustomers();
+        await fetchExpiryAnalysis();
+      }
+    } catch (e) {
+      console.error('Error creating quick loose bill:', e);
     } finally {
       setIsSubmittingBill(false);
     }
@@ -314,11 +409,13 @@ export default function Home() {
     setProducts(prev => prev.map(p => p.id === id ? { ...p, quantity: newQty } : p));
   };
 
+  const [showSalesModal, setShowSalesModal] = useState(false);
+
   return (
     <>
       <Navbar shopId={shopId} />
       <SegmentTabs activeTab={activeTab} setActiveTab={setActiveTab} />
-      <StatsSummary totalItems={totalItems} stockValue={stockValue} matchedCount={products.length} />
+      <StatsSummary totalItems={totalItems} stockValue={stockValue} matchedCount={products.length} onOpenSalesModal={() => setShowSalesModal(true)} />
 
       {activeTab === 'add_inventory' && (
         <main className="flex flex-col gap-4">
@@ -340,6 +437,8 @@ export default function Home() {
             handleSaveConfirmedProduct={handleSaveConfirmedProduct}
             isSubmitting={isSubmittingBill}
             successToast={successToast}
+            expiryData={expiryData}
+            onOpenExpiryModal={() => setShowExpiryModal(true)}
           />
         </main>
       )}
@@ -355,6 +454,7 @@ export default function Home() {
             setRecordedAudioBlob={setRecordedAudioBlob}
             handleTakeSnap={handleTakeSnap}
             handleAnalyzeProduct={handleAnalyzeBill}
+            handleQuickLooseSale={handleQuickLooseSale}
             handleResetToCamera={handleResetToCamera}
             successToast={successToast}
             generatedBill={generatedBill}
@@ -381,6 +481,9 @@ export default function Home() {
           <InventoryCatalog
             products={products}
             onUpdateStock={handleUpdateStock}
+            shopId={shopId}
+            expiryData={expiryData}
+            onOpenExpiryModal={() => setShowExpiryModal(true)}
           />
         </main>
       )}
@@ -392,6 +495,28 @@ export default function Home() {
             onRecordPayment={handleDirectUdhaarPayment}
           />
         </main>
+      )}
+
+      {/* DUKANDAR SALES & BILLS REGISTER MODAL OVERLAY */}
+      {showSalesModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[92vh] overflow-y-auto p-4 sm:p-6 border-2 border-emerald-600 shadow-2xl">
+            <SalesAnalytics shopId={shopId} products={products} onClose={() => setShowSalesModal(false)} />
+          </div>
+        </div>
+      )}
+
+      {/* AI EXPIRY CLEARANCE TRACKER MODAL OVERLAY */}
+      {showExpiryModal && (
+        <ExpiryTrackerModal
+          expiryData={expiryData}
+          onClose={() => setShowExpiryModal(false)}
+          onApplyDiscount={handleApplyExpiryDiscount}
+          onUpdateStock={handleUpdateStock}
+          onRefreshStrategies={fetchExpiryAnalysis}
+          speakAIVoicePrompt={speakAIVoicePrompt}
+          isLoading={isExpiryLoading}
+        />
       )}
     </>
   );

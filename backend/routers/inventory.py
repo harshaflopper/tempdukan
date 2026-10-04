@@ -6,6 +6,7 @@ from typing import List, Dict, Any
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from services.shop_memory_service import save_product_to_shop_memory, update_product_stock
+from services.expiry_service import get_shop_expiry_analysis
 
 class ProductConfirmRequest(BaseModel):
     shop_id: str = settings.DEFAULT_SHOP_ID
@@ -19,7 +20,33 @@ class ProductUpdateRequest(BaseModel):
     selling_price: Optional[float] = None
     expiry_date: Optional[str] = None
 
+class ApplyDiscountRequest(BaseModel):
+    shop_id: str = settings.DEFAULT_SHOP_ID
+    product_id: str
+    suggested_price: float
+
 router = APIRouter(prefix="/api/v1", tags=["Shop Inventory"])
+
+@router.get("/expiry/analysis")
+async def get_expiry_analysis_endpoint(shop_id: str = settings.DEFAULT_SHOP_ID):
+    """
+    Fetches shop expiry risk analysis and AI clearance strategies from Gemini Flash.
+    """
+    return await get_shop_expiry_analysis(shop_id)
+
+@router.post("/expiry/apply-discount")
+async def apply_expiry_discount_price(req: ApplyDiscountRequest):
+    """
+    Applies suggested AI clearance discount price to a product.
+    """
+    updated = await update_product_stock(
+        product_id=req.product_id,
+        shop_id=req.shop_id,
+        selling_price=req.suggested_price
+    )
+    if updated:
+        return {"success": True, "product": updated, "message": f"Updated price to ₹{req.suggested_price}"}
+    raise HTTPException(status_code=500, detail="Failed to update clearance discount price")
 
 @router.get("/products")
 async def get_shop_inventory(shop_id: str = settings.DEFAULT_SHOP_ID):
