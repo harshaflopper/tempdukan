@@ -1,8 +1,40 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&family=Noto+Serif+Devanagari:wght@400;600;700;800;900&family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Rozha+One&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+.font-newspaper-headline {
+  font-family: 'Rozha One', 'Noto Serif Devanagari', 'Playfair Display', serif;
+}
+
+.font-newspaper-body {
+  font-family: 'Noto Serif Devanagari', Georgia, serif;
+}
+
+.newspaper-paper-bg {
+  background-color: #f7f3e9;
+}
+
+.newspaper-masthead-border {
+  border-top: 5px solid #1a150e;
+  border-bottom: 3px double #1a150e;
+}
+
+.newspaper-column-rule {
+  border-right: 1px solid #d4cebe;
+}
+
+.newspaper-drop-cap::first-letter {
+  font-family: 'Rozha One', 'Noto Serif Devanagari', serif;
+  float: left;
+  font-size: 2.8rem;
+  line-height: 0.8;
+  padding-right: 0.4rem;
+  padding-top: 0.1rem;
+  color: #1a150e;
+  font-weight: bold;
+}
 
 @layer base {
   body {
