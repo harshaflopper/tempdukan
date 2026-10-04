@@ -95,18 +95,49 @@ async def generate_daily_shop_newspaper(shop_id: str = 'SHOP001') -> Dict[str, A
             })
     top_udhaar_customers.sort(key=lambda x: x["udhaar_balance"], reverse=True)
 
+    # Demand Signals
+    demand_items = []
+    trending_signals = []
+    if supabase:
+        try:
+            res_s = supabase.table("customer_search_logs").select("*").execute()
+            searches = res_s.data or []
+            query_counts = {}
+            for s in searches:
+                q = s['query']
+                query_counts[q] = query_counts.get(q, 0) + 1
+            
+            # Add mock data if needed for MVP
+            if len(searches) < 5:
+                mock_queries = {"amul butter 100g": 18, "ashirvaad atta 5kg": 24, "lays magic masala": 15}
+                for mq, count in mock_queries.items():
+                    if mq not in query_counts:
+                        query_counts[mq] = count
+            
+            shop_product_names = [p.get("name", "").lower() for p in products]
+            for q, count in sorted(query_counts.items(), key=lambda x: x[1], reverse=True):
+                # We show top trending searches regardless of whether it's stocked
+                if count >= 5:
+                    demand_items.append({"query": q, "count": count})
+            
+            trending_signals = [{"query": item["query"].title(), "count": item["count"]} for item in demand_items[:3]]
+        except Exception as e:
+            print(f"Error fetching demand for newspaper: {e}")
+
     # Construct Newspaper Edition JSON Structure
     newspaper_data = {
         "edition_name": "दैनिक दुकान समाचार",
         "tagline": "LastDukan Daily Edition - SHOP001",
         "date_str": "रविवार, 4 अक्टूबर 2026",
         "shop_id": shop_id,
-        "total_stories": 4,
+        "total_stories": 5,
+        "trending_signals": trending_signals,
         "stories": {
             "expiry_headline": _build_expiry_story(expiring_items),
             "fast_movers_headline": _build_fast_movers_story(low_stock_items),
             "slow_movers_headline": _build_slow_movers_story(slow_moving_items),
-            "udhaar_headline": _build_udhaar_story(top_udhaar_customers)
+            "udhaar_headline": _build_udhaar_story(top_udhaar_customers),
+            "market_demand_headline": _build_demand_story(demand_items)
         }
     }
 
@@ -205,12 +236,29 @@ def _build_udhaar_story(customers: List[Dict[str, Any]]) -> Dict[str, Any]:
         "customers": customers[:3]
     }
 
+def _build_demand_story(items: List[Dict[str, Any]]) -> Dict[str, Any]:
+    if not items:
+        return {
+            "category": "बाज़ार की मांग",
+            "title": "स्थानीय मांग सामान्य है",
+            "body": "अभी आस-पास के ग्राहकों से कोई नई विशेष मांग नहीं है।",
+            "items": []
+        }
+    top = items[0]
+    return {
+        "category": "बाज़ार की मांग",
+        "title": f"ट्रेंडिंग: {top['count']} लोग '{top['query'].title()}' खोज रहे हैं",
+        "body": f"आपकी दुकान के आस-पास '{top['query'].title()}' की भारी मांग है। कृपया सुनिश्चित करें कि आपके पास पर्याप्त स्टॉक उपलब्ध है।",
+        "items": items[:3]
+    }
+
 def _build_fallback_bulletin(data: Dict[str, Any]) -> str:
     s = data.get("stories", {})
     exp_title = s.get("expiry_headline", {}).get("title", "")
     fast_title = s.get("fast_movers_headline", {}).get("title", "")
     udh_title = s.get("udhaar_headline", {}).get("title", "")
-    return f"नमस्कार रामजी! आज के दुकान समाचार की मुख्य बातें: {exp_title}। {fast_title}। {udh_title}। धन्यवाद!"
+    dem_title = s.get("market_demand_headline", {}).get("title", "")
+    return f"Namaskar! Aaj ke dukan samachar ki mukhya baatein: {exp_title}. {fast_title}. {udh_title}. {dem_title}. Shukriya!"
 
 async def _refine_newspaper_with_gemini(shop_id: str, raw_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Calls Gemini Flash to generate authentic Hindi newspaper headlines and bulletined news audio script."""
@@ -224,7 +272,7 @@ async def _refine_newspaper_with_gemini(shop_id: str, raw_data: Dict[str, Any]) 
     Requirements:
     1. Output ONLY a valid JSON object matching the exact structure below.
     2. Write natural, bold Hindi headlines and 2-sentence story bodies suitable for an Indian Kirana Dukandar.
-    3. Include a "bulletin_audio_script" string that reads out all 4 news headlines smoothly in spoken Hindi news anchor style.
+    3. Include a "bulletin_audio_script" string that reads out all 4 news headlines smoothly. CRITICAL: This "bulletin_audio_script" MUST be written strictly in HINGLISH (Latin alphabet, e.g., "Namaskar dosto, aaj ki taza khabar...") because it will be read by an English Text-To-Speech engine. Do NOT use any Devanagari script in the audio script.
 
     Return JSON schema:
     {{
@@ -253,9 +301,15 @@ async def _refine_newspaper_with_gemini(shop_id: str, raw_data: Dict[str, Any]) 
           "title": "Bold Udhaar Recovery Headline",
           "body": "2 sentence story body",
           "customers": [...]
+        }},
+        "market_demand_headline": {{
+          "category": "बाज़ार की मांग",
+          "title": "Bold Market Demand Headline",
+          "body": "2 sentence story body advising to stock the trending item",
+          "items": [...]
         }}
       }},
-      "bulletin_audio_script": "Full spoken Hindi news bulletin text to read out loud via TTS"
+      "bulletin_audio_script": "Full spoken Hinglish news bulletin text using strictly Latin/English characters."
     }}
     Do NOT include markdown formatting or backticks.
     """

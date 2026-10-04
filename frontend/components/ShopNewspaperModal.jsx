@@ -45,6 +45,7 @@ export default function ShopNewspaperModal({
   const fastStory = stories.fast_movers_headline || {};
   const slowStory = stories.slow_movers_headline || {};
   const udhaarStory = stories.udhaar_headline || {};
+  const marketStory = stories.market_demand_headline || {};
 
   const handlePlayBulletin = () => {
     if (bulletin_audio_script && speakAIVoicePrompt) {
@@ -62,308 +63,313 @@ export default function ShopNewspaperModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 animate-in fade-in font-newspaper-body">
-      {/* OUTER NEWSPAPER CONTAINER */}
-      <div className="bg-[#f7f3e9] text-[#1a150e] rounded-xl max-w-5xl w-full max-h-[95vh] flex flex-col overflow-hidden border-4 border-[#1a150e] shadow-2xl relative">
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-6 animate-in fade-in zoom-in-95 duration-300 font-newspaper-body">
+      {/* OUTER NEWSPAPER CONTAINER - PAPER TEXTURE & DOUBLE BORDER */}
+      <div className="relative w-full max-w-6xl max-h-[96vh] flex flex-col bg-[#f4ebd0] shadow-[0_20px_60px_rgba(0,0,0,0.6),inset_0_0_100px_rgba(139,115,85,0.15)] rounded-sm border-[12px] border-double border-[#2c2416] overflow-hidden">
         
-        {/* NEWSPAPER MASTHEAD HEADER */}
-        <div className="bg-[#f2ece0] p-4 sm:p-6 border-b-4 border-[#1a150e] flex flex-col gap-3 relative">
+        {/* TOP FOLD GRADIENT (Skeuomorphic lighting) */}
+        <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-white/40 to-transparent pointer-events-none z-10" />
+
+        <div className="flex flex-col h-full overflow-y-auto overflow-x-hidden relative z-20 custom-scrollbar">
           
-          {/* TOP EAR-PIECES (हिंदी अखबार का कोना / ईयर पीस) */}
-          <div className="grid grid-cols-3 items-center border-b border-[#1a150e]/30 pb-2 text-[11px] font-bold text-[#1a150e]">
-            {/* Left Ear-piece */}
-            <div className="flex items-center gap-1.5 border-r border-[#1a150e]/30 pr-2">
-              <CloudSun className="w-4 h-4 text-amber-900 shrink-0" />
-              <span>मौसम: 28°C साफ़ | शुभ मुहूर्त आज</span>
+          {/* MASTHEAD SECTION */}
+          <div className="px-6 pt-8 pb-4 flex flex-col gap-4 items-center border-b-[3px] border-[#2c2416] bg-gradient-to-b from-[#fdfbf7] to-transparent">
+            
+            {/* EARPIECES & DATE */}
+            <div className="w-full flex justify-between items-end border-b border-[#2c2416] pb-2 text-[11px] sm:text-xs font-bold text-[#4a3f35] uppercase tracking-widest">
+              <div className="flex items-center gap-2">
+                <CloudSun className="w-4 h-4" />
+                <span>मौसम: 28°C साफ़ | शुभ मुहूर्त</span>
+              </div>
+              <div className="hidden sm:block text-center font-black tracking-widest px-4 border-x border-[#2c2416]">
+                भारत का नं. 1 दुकान समाचार पत्र
+              </div>
+              <div className="flex items-center gap-4">
+                <span>दैनिक संस्करण: {shop_id}</span>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="p-1 rounded-full bg-[#2c2416]/10 hover:bg-[#2c2416] hover:text-[#f4ebd0] transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
-            {/* Center Tag */}
-            <div className="text-center font-newspaper-headline text-xs font-black tracking-wider uppercase text-amber-950">
-              भारत का नं. 1 दुकान समाचार पत्र
-            </div>
-
-            {/* Right Ear-piece */}
-            <div className="text-right border-l border-[#1a150e]/30 pl-2 flex items-center justify-end gap-2">
-              <span>मूल्य: निःशुल्क (दुकान संस्करण)</span>
-              <button
-                type="button"
-                onClick={onClose}
-                className="p-1 rounded bg-[#1a150e]/10 hover:bg-[#1a150e]/20 text-[#1a150e] transition-all font-sans"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-
-          {/* MAIN NEWSPAPER TITLE (मस्तहेड - मुख्य शीर्षक) */}
-          <div className="flex flex-col items-center justify-center text-center my-1">
-            <h1 className="font-newspaper-headline font-black text-4xl sm:text-6xl tracking-tight text-[#1a150e] uppercase leading-none py-1">
-              {edition_name}
-            </h1>
-            <div className="w-full border-t border-b border-[#1a150e] py-1 my-1 flex items-center justify-between text-xs font-bold px-4">
-              <span>वर्ष 1, अंक 245</span>
-              <span className="font-newspaper-headline tracking-widest uppercase">लास्टदुकान दैनिक संस्करण — {shop_id}</span>
-              <span>{date_str}</span>
+            {/* TITLE */}
+            <div className="flex flex-col items-center justify-center text-center w-full relative py-2 sm:py-4">
+              <h1 className="font-newspaper-headline font-black text-6xl sm:text-[5.5rem] tracking-tighter text-[#1b160e] uppercase leading-none" style={{ textShadow: '2px 2px 0px rgba(255,255,255,0.5)' }}>
+                {edition_name}
+              </h1>
+              <span className="absolute -bottom-3 bg-[#f4ebd0] px-4 text-xs sm:text-sm font-black tracking-[0.3em] text-[#4a3f35] border border-[#2c2416] py-1">
+                {date_str} — वर्ष 1, अंक 245
+              </span>
             </div>
           </div>
 
-          {/* NEWS ANCHOR AUDIO PLAYER BAR (समाचार वाचक) */}
+          {/* VINTAGE RADIO / AUDIO PLAYER */}
           {bulletin_audio_script && (
-            <div className="bg-[#1a150e] text-[#f7f3e9] p-3 rounded-lg flex items-center justify-between gap-3 font-sans shadow-md border border-[#1a150e]">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-md bg-amber-500 text-slate-950 flex items-center justify-center font-bold shrink-0">
-                  <Volume2 className={`w-5 h-5 ${isPlayingAudio ? 'animate-bounce' : ''}`} />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-xs font-extrabold uppercase tracking-wide text-amber-400 font-newspaper-headline">
-                    दुकान समाचार वाचक (AI Daily News Bulletin)
-                  </span>
-                  <span className="text-xs font-medium text-slate-200 line-clamp-1">
-                    आज की सभी मुख्य खबरें ऑडियो में बोल के सुनें
-                  </span>
+            <div className="mx-6 mt-6 mb-2">
+              <div className="bg-gradient-to-r from-[#2c2416] via-[#3a2f20] to-[#2c2416] text-[#e8dbb5] p-1 rounded-sm shadow-[0_5px_15px_rgba(0,0,0,0.3)] border-2 border-[#16120b] relative overflow-hidden">
+                <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.8)_0%,transparent_100%)] pointer-events-none" />
+                <div className="border border-[#4a3f35]/50 p-3 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-4 relative z-10">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#d4af37] to-[#aa7c11] border-2 border-[#16120b] flex items-center justify-center shadow-[inset_0_2px_5px_rgba(255,255,255,0.5)]">
+                      <Volume2 className={`w-6 h-6 text-[#16120b] ${isPlayingAudio ? 'animate-pulse' : ''}`} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-sm font-black uppercase tracking-widest text-[#d4af37] font-newspaper-headline drop-shadow-md">
+                        रेडियो बुलेटिन (AI News Anchor)
+                      </span>
+                      <span className="text-xs font-semibold opacity-80 tracking-wide">
+                        आज की मुख्य ख़बरें ऑडियो में सुनें
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handlePlayBulletin}
+                    className="w-full sm:w-auto px-6 py-2.5 bg-gradient-to-b from-[#d4af37] to-[#b38510] hover:from-[#e3c153] hover:to-[#c69a19] text-[#16120b] font-black text-xs uppercase tracking-widest rounded-sm border border-[#16120b] shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_2px_4px_rgba(0,0,0,0.4)] active:translate-y-[1px] transition-all"
+                  >
+                    {isPlayingAudio ? '► ब्रॉडकास्ट जारी...' : '► प्ले बुलेटिन'}
+                  </button>
                 </div>
               </div>
-
-              <button
-                type="button"
-                onClick={handlePlayBulletin}
-                className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs rounded-md flex items-center gap-1.5 shadow-xs transition-all shrink-0 font-sans"
-              >
-                <Volume2 className="w-4 h-4 text-slate-950" />
-                <span>{isPlayingAudio ? 'ब्रीफिंग जारी है...' : 'पूरा समाचार सुनें'}</span>
-              </button>
             </div>
           )}
-        </div>
 
-        {/* NEWSPAPER 3-COLUMN FRONT PAGE GRID */}
-        <div className="p-4 sm:p-6 overflow-y-auto flex-1 grid grid-cols-1 md:grid-cols-3 gap-6 bg-[#f7f3e9]">
-          
-          {/* COLUMN 1: मुख्य समाचार (LEAD FRONT-PAGE STORY: EXPIRY & CLEARANCE) */}
-          <div className="newspaper-column-rule pr-0 md:pr-4 flex flex-col gap-4">
-            <div className="border-b-2 border-[#1a150e] pb-1.5">
-              <span className="bg-[#1a150e] text-white px-2 py-0.5 text-[11px] font-extrabold font-sans uppercase tracking-widest">
-                {expiryStory.category || 'मुख्य समाचार'}
-              </span>
-              <span className="text-[10px] font-bold text-slate-600 float-right">पेज 1 - एक्सपायारी अलर्ट</span>
-            </div>
-
-            <h2 className="font-newspaper-headline font-extrabold text-2xl text-[#1a150e] leading-snug">
-              {expiryStory.title || 'स्टॉक तरोताजा है'}
-            </h2>
-
-            {/* PRESS PHOTO FRAME WITH CAPTION */}
-            <div className="bg-[#ede7d7] p-2 border border-[#1a150e]/40 shadow-2xs">
-              <div className="bg-slate-900 text-amber-100 p-4 rounded text-center flex flex-col items-center justify-center min-h-[100px] border border-amber-900/40">
-                <ShieldAlert className="w-8 h-8 text-amber-400 mb-1" />
-                <span className="text-xs font-bold font-sans">दुकान शेल्फ फोटो रिपोर्ट</span>
-              </div>
-              <p className="text-[11px] font-bold text-[#1a150e] italic mt-1.5 text-center">
-                चित्र: शेल्फ पर रखे सामान की तुरंत बिक्री आवश्यक है।
-              </p>
-            </div>
-
-            <p className="text-sm font-newspaper-body text-[#1a150e] leading-relaxed text-justify newspaper-drop-cap">
-              {expiryStory.body || 'आपकी दुकान का पूरा स्टॉक सुरक्षित है। सभी सामानों की एक्सपायरी डेट लंबी है।'}
-            </p>
-
-            {/* PRODUCT EXPIRY CLEARANCE ACTION ITEMS */}
-            {expiryStory.items && expiryStory.items.length > 0 && (
-              <div className="mt-2 flex flex-col gap-2 font-sans border-t border-[#1a150e]/20 pt-3">
-                <span className="text-xs font-extrabold uppercase text-[#1a150e] block">
-                  तुरंत डिस्काउंट लगाएं:
+          {/* EDITORIAL 3-COLUMN GRID */}
+          <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            {/* COLUMN 1: EXPIRY NEWS */}
+            <div className="flex flex-col gap-5 lg:border-r-[1.5px] border-[#2c2416]/40 lg:pr-8">
+              <div className="flex items-center gap-2 border-y-2 border-[#2c2416] py-1 mb-2">
+                <span className="bg-[#2c2416] text-[#f4ebd0] px-2 py-0.5 text-[10px] font-black uppercase tracking-widest">
+                  {expiryStory.category || 'मुख्य समाचार'}
                 </span>
-                {expiryStory.items.map((item) => {
-                  const isApplied = appliedItemIds.includes(item.id);
-                  return (
-                    <div key={item.id} className="bg-[#eee8d8] p-2.5 rounded border border-[#1a150e]/30 flex items-center justify-between gap-2">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-xs text-[#1a150e]">{item.name}</span>
-                        <span className="text-[11px] font-semibold text-rose-900">
-                          Exp: {item.expiry_date} | Qty: {item.quantity} {item.unit}
-                        </span>
-                      </div>
-
-                      {item.suggested_clearance_price && (
-                        <button
-                          type="button"
-                          disabled={isApplied}
-                          onClick={() => handleApplyDiscountClick(item.id, item.suggested_clearance_price)}
-                          className={`px-3 py-1.5 rounded text-xs font-extrabold flex items-center gap-1 transition-all ${
-                            isApplied
-                              ? 'bg-emerald-800 text-white'
-                              : 'bg-[#1a150e] hover:bg-slate-900 text-amber-300'
-                          }`}
-                        >
-                          {isApplied ? (
-                            <>
-                              <Check className="w-3.5 h-3.5" /> ₹{item.suggested_clearance_price}
-                            </>
-                          ) : (
-                            <>
-                              <Tag className="w-3.5 h-3.5" /> ₹{item.suggested_clearance_price}
-                            </>
-                          )}
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* COLUMN 2: बाज़ार हलचल (FAST MOVERS & DEAD STOCK ADVICE) */}
-          <div className="newspaper-column-rule pr-0 md:pr-4 flex flex-col gap-4">
-            <div className="border-b-2 border-[#1a150e] pb-1.5">
-              <span className="bg-[#1a150e] text-white px-2 py-0.5 text-[11px] font-extrabold font-sans uppercase tracking-widest">
-                {fastStory.category || 'बाज़ार हलचल'}
-              </span>
-              <span className="text-[10px] font-bold text-slate-600 float-right">पेज 2 - बिक्री ख़बर</span>
-            </div>
-
-            <h2 className="font-newspaper-headline font-extrabold text-2xl text-[#1a150e] leading-snug">
-              {fastStory.title || 'बिक्री सामान्य गति से जारी'}
-            </h2>
-
-            <p className="text-sm font-newspaper-body text-[#1a150e] leading-relaxed text-justify">
-              {fastStory.body || 'मुख्य सामानों की मात्रा पर्याप्त है।'}
-            </p>
-
-            {/* FAST MOVER ACTION LIST */}
-            {fastStory.items && fastStory.items.length > 0 && (
-              <div className="flex flex-col gap-2 font-sans border-t border-[#1a150e]/20 pt-3">
-                {fastStory.items.map((item) => (
-                  <div key={item.id} className="bg-[#eee8d8] p-2.5 rounded border border-[#1a150e]/30 flex items-center justify-between gap-2">
-                    <div className="flex flex-col">
-                      <span className="font-bold text-xs text-[#1a150e]">{item.name}</span>
-                      <span className="text-[11px] font-semibold text-emerald-900">
-                        केवल {item.quantity} {item.unit} बचे हैं
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => onUpdateStock && onUpdateStock(item.id, parseFloat(item.quantity) + 10)}
-                      className="px-3 py-1.5 rounded bg-emerald-800 hover:bg-emerald-900 text-white font-extrabold text-xs flex items-center gap-1 transition-all"
-                    >
-                      <ShoppingBag className="w-3.5 h-3.5" />
-                      <span>+10 री-ऑर्डर</span>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* SLOW MOVER & DEAD STOCK WARNING BOX */}
-            <div className="border-t-2 border-b-2 border-[#1a150e] py-3 my-2 flex flex-col gap-2">
-              <div className="flex items-center justify-between font-sans">
-                <span className="font-newspaper-headline text-sm font-extrabold uppercase text-[#1a150e]">
-                  {slowStory.category || 'धीमी बिक्री चेतावनी'}
-                </span>
-                <AlertTriangle className="w-4 h-4 text-amber-900" />
+                <span className="text-[10px] font-bold text-[#5a4f40] uppercase tracking-wider ml-auto">पेज 1</span>
               </div>
 
-              <h3 className="font-newspaper-headline font-bold text-base text-[#1a150e]">
-                {slowStory.title || 'बिक्री चक्र सुचारू है'}
-              </h3>
-
-              <p className="text-xs font-newspaper-body text-[#1a150e]">
-                {slowStory.body || 'कोई सामान रुका हुआ नहीं है।'}
-              </p>
-
-              {slowStory.items && slowStory.items.length > 0 && (
-                <div className="flex flex-col gap-1.5 font-sans mt-1">
-                  {slowStory.items.map((item) => (
-                    <div key={item.id} className="bg-[#e8e1cf] p-2 rounded border border-[#1a150e]/30 flex items-center justify-between text-xs">
-                      <span className="font-bold text-[#1a150e]">{item.name}</span>
-                      <span className="text-[10px] font-extrabold bg-amber-900 text-amber-50 px-2 py-0.5 rounded">
-                        दोबारा न मंगाएं
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* COLUMN 3: उधार वसूली & विज्ञापन समाचार (CLASSIFIEDS & UDHAAR) */}
-          <div className="flex flex-col gap-4">
-            <div className="border-b-2 border-[#1a150e] pb-1.5">
-              <span className="bg-[#1a150e] text-white px-2 py-0.5 text-[11px] font-extrabold font-sans uppercase tracking-widest">
-                {udhaarStory.category || 'उधार वसूली'}
-              </span>
-              <span className="text-[10px] font-bold text-slate-600 float-right">पेज 3 - गल्ला समाचार</span>
-            </div>
-
-            {/* CLASSIFIEDS / NOTICE BOX STYLE FOR UDHAAR */}
-            <div className="bg-[#ede7d7] border-2 border-[#1a150e] p-3 shadow-2xs flex flex-col gap-2">
-              <div className="text-center font-newspaper-headline text-xs font-black uppercase tracking-wider border-b border-[#1a150e] pb-1">
-                विशेष सूचना: उधार वसूली रिगार्डिंग
-              </div>
-
-              <h2 className="font-newspaper-headline font-extrabold text-lg text-[#1a150e] leading-snug">
-                {udhaarStory.title || 'उधार खाता संतुलित है'}
+              <h2 className="font-newspaper-headline font-black text-3xl sm:text-4xl text-[#1b160e] leading-[1.1] tracking-tight">
+                {expiryStory.title || 'स्टॉक तरोताजा है'}
               </h2>
 
-              <p className="text-xs font-newspaper-body text-[#1a150e] leading-relaxed">
-                {udhaarStory.body || 'किसी ग्राहक का भारी बकाया नहीं है।'}
+              {/* VINTAGE PRESS PHOTO */}
+              <div className="bg-[#e9dec0] p-1.5 border border-[#4a3f35]/30 rotate-1 hover:rotate-0 transition-transform">
+                <div className="bg-[#2c2416] grayscale contrast-125 text-[#d4af37] p-6 flex flex-col items-center justify-center min-h-[140px] border border-[#16120b]">
+                  <ShieldAlert className="w-12 h-12 mb-3 opacity-90" />
+                  <span className="text-sm font-black tracking-widest uppercase">दुकान शेल्फ रिपोर्ट</span>
+                </div>
+                <p className="text-[10px] font-bold text-[#4a3f35] italic mt-2 px-1 text-center font-serif">
+                  चित्र 1: शेल्फ पर रखे सामान की तुरंत बिक्री आवश्यक है।
+                </p>
+              </div>
+
+              <p className="text-sm font-newspaper-body text-[#2c2416] leading-relaxed text-justify first-letter:text-6xl first-letter:font-black first-letter:text-[#1b160e] first-letter:float-left first-letter:mr-3 first-letter:mt-1">
+                {expiryStory.body || 'आपकी दुकान का पूरा स्टॉक सुरक्षित है। सभी सामानों की एक्सपायरी डेट लंबी है।'}
               </p>
 
-              {/* UDHAAR CUSTOMER LIST */}
-              {udhaarStory.customers && udhaarStory.customers.length > 0 && (
-                <div className="flex flex-col gap-2 font-sans mt-1">
-                  {udhaarStory.customers.map((c) => (
-                    <div key={c.id} className="bg-[#f7f3e9] p-2.5 rounded border border-[#1a150e]/30 flex items-center justify-between gap-1">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-xs text-[#1a150e]">{c.name}</span>
-                        <span className="text-[11px] font-extrabold text-rose-900">
-                          बकाया: ₹{c.udhaar_balance}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-1">
-                        {c.phone && (
-                          <a
-                            href={`tel:${c.phone}`}
-                            className="p-1.5 rounded bg-emerald-800 text-white hover:bg-emerald-900 transition-all"
-                            title="Call Customer"
+              {/* CLEARANCE ACTION ITEMS */}
+              {expiryStory.items && expiryStory.items.length > 0 && (
+                <div className="mt-4 border-t-2 border-dashed border-[#4a3f35]/30 pt-4 flex flex-col gap-3">
+                  <span className="text-xs font-black uppercase tracking-widest text-[#1b160e]">
+                    » तुरंत डिस्काउंट लगाएं
+                  </span>
+                  {expiryStory.items.map((item) => {
+                    const isApplied = appliedItemIds.includes(item.id);
+                    return (
+                      <div key={item.id} className="bg-[#ede4cb] p-3 border border-[#2c2416]/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+                        <div className="flex flex-col">
+                          <span className="font-extrabold text-sm text-[#1b160e]">{item.name}</span>
+                          <span className="text-[11px] font-bold text-[#8b2323] uppercase tracking-wider mt-0.5">
+                            Exp: {item.expiry_date} | Qty: {item.quantity}
+                          </span>
+                        </div>
+                        {item.suggested_clearance_price && (
+                          <button
+                            type="button"
+                            disabled={isApplied}
+                            onClick={() => handleApplyDiscountClick(item.id, item.suggested_clearance_price)}
+                            className={`w-full sm:w-auto px-4 py-2 text-xs font-black uppercase tracking-widest border border-[#2c2416] shadow-[2px_2px_0px_rgba(44,36,22,1)] active:shadow-none active:translate-y-[2px] transition-all flex items-center justify-center gap-2 ${
+                              isApplied
+                                ? 'bg-[#2c2416] text-white'
+                                : 'bg-[#d4af37] text-[#16120b] hover:bg-[#e3c153]'
+                            }`}
                           >
-                            <Phone className="w-3.5 h-3.5" />
-                          </a>
+                            {isApplied ? <><Check className="w-4 h-4" /> ₹{item.suggested_clearance_price}</> : <><Tag className="w-4 h-4" /> ₹{item.suggested_clearance_price}</>}
+                          </button>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => speakAIVoicePrompt && speakAIVoicePrompt(`${c.name} को ₹${c.udhaar_balance} का SMS भेज दिया गया है`)}
-                          className="px-2 py-1 rounded bg-[#1a150e] text-amber-300 font-bold text-[11px] flex items-center gap-1 hover:bg-slate-900 transition-all"
-                        >
-                          <MessageSquare className="w-3 h-3" />
-                          <span>SMS</span>
-                        </button>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
 
-            {/* DUKANDAR AD & TIPS BOX */}
-            <div className="bg-[#f0e9d9] border border-[#1a150e]/40 p-3 rounded flex flex-col gap-1.5 font-sans">
-              <span className="text-[10px] font-extrabold uppercase text-amber-950 tracking-wider">
-                दुकानदार दैनिक मंत्र:
-              </span>
-              <p className="text-xs font-newspaper-body text-[#1a150e] italic">
-                "शाम के समय बिक्री काउंटर (गल्ला) की गिनती करें और धीमी गति वाले सामान को फ्रंट शेल्फ पर रखें।"
+            {/* COLUMN 2: FAST & SLOW MOVERS */}
+            <div className="flex flex-col gap-5 lg:border-r-[1.5px] border-[#2c2416]/40 lg:pr-8">
+              <div className="flex items-center gap-2 border-y-2 border-[#2c2416] py-1 mb-2">
+                <span className="bg-[#2c2416] text-[#f4ebd0] px-2 py-0.5 text-[10px] font-black uppercase tracking-widest">
+                  {fastStory.category || 'बाज़ार हलचल'}
+                </span>
+                <span className="text-[10px] font-bold text-[#5a4f40] uppercase tracking-wider ml-auto">पेज 2</span>
+              </div>
+
+              <h2 className="font-newspaper-headline font-black text-2xl sm:text-3xl text-[#1b160e] leading-[1.2] tracking-tight">
+                {fastStory.title || 'बिक्री सामान्य गति से जारी'}
+              </h2>
+
+              <p className="text-sm font-newspaper-body text-[#2c2416] leading-relaxed text-justify">
+                {fastStory.body || 'मुख्य सामानों की मात्रा पर्याप्त है।'}
               </p>
+
+              {fastStory.items && fastStory.items.length > 0 && (
+                <div className="flex flex-col gap-3 font-sans border-y border-[#4a3f35]/20 py-4 my-2">
+                  {fastStory.items.map((item) => (
+                    <div key={item.id} className="flex items-center justify-between gap-3 border-b border-[#4a3f35]/10 pb-3 last:border-0 last:pb-0">
+                      <div className="flex flex-col">
+                        <span className="font-bold text-sm text-[#1b160e]">{item.name}</span>
+                        <span className="text-[11px] font-extrabold text-[#2e5a31] uppercase tracking-wider mt-0.5">
+                          शेष स्टॉक: {item.quantity} {item.unit}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onUpdateStock && onUpdateStock(item.id, parseFloat(item.quantity) + 10)}
+                        className="p-2 bg-[#2c2416] text-[#f4ebd0] hover:bg-[#4a3f35] rounded-full transition-colors"
+                        title="+10 री-ऑर्डर"
+                      >
+                        <ShoppingBag className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* SLOW MOVERS AD-BOX */}
+              <div className="mt-4 border-[3px] border-[#2c2416] p-4 bg-[#ede4cb] relative">
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#2c2416] text-[#d4af37] px-3 py-0.5 text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                  <AlertTriangle className="w-3 h-3" />
+                  {slowStory.category || 'धीमी बिक्री'}
+                </div>
+                
+                <h3 className="font-newspaper-headline font-bold text-xl text-[#1b160e] text-center mt-2 mb-2 leading-tight">
+                  {slowStory.title || 'बिक्री चक्र सुचारू है'}
+                </h3>
+                
+                <p className="text-xs font-newspaper-body text-[#4a3f35] text-center italic mb-4">
+                  {slowStory.body || 'कोई सामान रुका हुआ नहीं है।'}
+                </p>
+
+                {slowStory.items && slowStory.items.length > 0 && (
+                  <ul className="flex flex-col gap-2">
+                    {slowStory.items.map((item) => (
+                      <li key={item.id} className="flex items-center justify-between text-xs border-b border-[#4a3f35]/20 pb-1.5 border-dashed">
+                        <span className="font-bold text-[#1b160e]">{item.name}</span>
+                        <span className="font-black text-[#8b2323] uppercase tracking-widest text-[9px]">✗ रद्द</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
+
+            {/* COLUMN 3: UDHAAR & FOOTER */}
+            <div className="flex flex-col gap-5">
+              <div className="flex items-center gap-2 border-y-2 border-[#2c2416] py-1 mb-2">
+                <span className="bg-[#2c2416] text-[#f4ebd0] px-2 py-0.5 text-[10px] font-black uppercase tracking-widest">
+                  {udhaarStory.category || 'उधार वसूली'}
+                </span>
+                <span className="text-[10px] font-bold text-[#5a4f40] uppercase tracking-wider ml-auto">पेज 3</span>
+              </div>
+
+              <div className="border border-[#2c2416] p-1">
+                <div className="border border-[#2c2416] bg-[#fdfbf7] p-4 flex flex-col gap-4 text-center">
+                  <h2 className="font-newspaper-headline font-black text-2xl text-[#8b2323] leading-tight border-b-2 border-[#2c2416] pb-3 mx-4">
+                    {udhaarStory.title || 'खाता संतुलित है'}
+                  </h2>
+                  <p className="text-xs font-newspaper-body text-[#4a3f35]">
+                    {udhaarStory.body || 'किसी ग्राहक का भारी बकाया नहीं है।'}
+                  </p>
+
+                  {udhaarStory.customers && udhaarStory.customers.length > 0 && (
+                    <div className="flex flex-col gap-3 mt-2 text-left">
+                      {udhaarStory.customers.map((c) => (
+                        <div key={c.id} className="flex flex-col gap-2 p-3 bg-[#f4ebd0] border border-[#2c2416]/20">
+                          <div className="flex justify-between items-end">
+                            <span className="font-black text-sm text-[#1b160e] uppercase tracking-wide">{c.name}</span>
+                            <span className="text-sm font-black text-[#8b2323]">₹{c.udhaar_balance}</span>
+                          </div>
+                          <div className="flex gap-2 mt-1">
+                            {c.phone && (
+                              <a href={`tel:${c.phone}`} className="flex-1 py-1.5 bg-[#2c2416] text-white text-center text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1 hover:bg-[#4a3f35] transition-colors">
+                                <Phone className="w-3 h-3" /> कॉल
+                              </a>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => speakAIVoicePrompt && speakAIVoicePrompt(`${c.name} को ₹${c.udhaar_balance} का SMS भेजा गया`)}
+                              className="flex-1 py-1.5 bg-white border border-[#2c2416] text-[#1b160e] text-center text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1 hover:bg-[#ede4cb] transition-colors"
+                            >
+                              <MessageSquare className="w-3 h-3" /> SMS
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* MARKET DEMAND AD-BOX */}
+              <div className="mt-4 border-[3px] border-[#2c2416] p-4 bg-[#f0e9d9] relative">
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#2c2416] text-[#d4af37] px-3 py-0.5 text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                  <TrendingUp className="w-3 h-3" />
+                  {marketStory.category || 'बाज़ार की मांग'}
+                </div>
+                
+                <h3 className="font-newspaper-headline font-bold text-xl text-[#1b160e] text-center mt-2 mb-2 leading-tight">
+                  {marketStory.title || 'स्थानीय मांग सामान्य है'}
+                </h3>
+                
+                <p className="text-xs font-newspaper-body text-[#4a3f35] text-center italic mb-4">
+                  {marketStory.body || 'अभी आस-पास के ग्राहकों से कोई नई विशेष मांग नहीं है।'}
+                </p>
+
+                {marketStory.items && marketStory.items.length > 0 && (
+                  <ul className="flex flex-col gap-2">
+                    {marketStory.items.map((item, idx) => (
+                      <li key={idx} className="flex items-center justify-between text-xs border-b border-[#4a3f35]/20 pb-1.5 border-dashed">
+                        <span className="font-bold text-[#1b160e]">{item.query.toUpperCase()}</span>
+                        <span className="font-black text-[#2e5a31] uppercase tracking-widest text-[10px]">
+                          {item.count} खोज
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {/* DAILY QUOTE */}
+              <div className="mt-auto border-t-4 border-double border-[#2c2416] pt-4 text-center">
+                <Sparkles className="w-5 h-5 mx-auto text-[#d4af37] mb-2" />
+                <p className="font-newspaper-headline font-bold text-lg text-[#1b160e] italic px-4">
+                  "जो ग्राहक खोजें, वो दुकानदार जाने।"
+                </p>
+              </div>
+            </div>
+
           </div>
 
-        </div>
-
-        {/* NEWSPAPER FOOTER BAR */}
-        <div className="p-3 bg-[#e8e1cf] border-t-4 border-[#1a150e] text-center font-sans text-xs font-bold text-[#1a150e] flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>मुद्रित एवं प्रकाशित: लास्टदुकान प्रेस, SHOP001 — भारत का दैनिक किराना समाचार</span>
-          <span>LastDukan Express Daily Newspaper</span>
+          {/* NEWSPAPER FOOTER BAR */}
+          <div className="mt-auto border-t-[3px] border-[#2c2416] bg-[#e9dec0] py-3 px-6 flex flex-col sm:flex-row items-center justify-between text-[10px] font-black uppercase tracking-widest text-[#4a3f35]">
+            <span>मुद्रित एवं प्रकाशित: लास्टदुकान प्रेस, SHOP001</span>
+            <span className="hidden sm:inline">•</span>
+            <span>भारत का दैनिक किराना समाचार</span>
+            <span className="hidden sm:inline">•</span>
+            <span>पंजीकरण संख्या: LD-2026</span>
+          </div>
         </div>
       </div>
     </div>

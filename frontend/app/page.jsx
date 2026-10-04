@@ -12,6 +12,10 @@ import AIBillWindow from '../components/AIBillWindow';
 import AddInventoryWindow from '../components/AddInventoryWindow';
 import SalesAnalytics from '../components/SalesAnalytics';
 import ExpiryTrackerModal from '../components/ExpiryTrackerModal';
+import ShopNewspaperModal from '../components/ShopNewspaperModal';
+import CustomerPortal from '../components/CustomerPortal';
+import RoleSelectionModal from '../components/RoleSelectionModal';
+import DemandSignals from '../components/DemandSignals';
 
 const API_BASE = 'http://localhost:8000/api/v1';
 
@@ -32,10 +36,22 @@ const speakAIVoicePrompt = (text) => {
 };
 
 export default function Home() {
+  // Role & Login Portal State ('CUSTOMER' | 'DUKANDAR')
+  const [currentRole, setCurrentRole] = useState('CUSTOMER');
+  const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
+  
+  // User Session Details
+  const [customerInfo, setCustomerInfo] = useState({ name: 'Rahul Sharma', location: 'Ward 4, Bhopalgarh Village, Rajasthan' });
+  const [dukandarInfo, setDukandarInfo] = useState({ shopId: 'SHOP001', ownerName: 'Ramji Sharma' });
+
   const [activeTab, setActiveTab] = useState('add_inventory');
-  const [shopId] = useState('SHOP001');
+  const [shopId, setShopId] = useState('SHOP001');
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
+
+  // Daily AI Shop Newspaper State ('दैनिक दुकान समाचार')
+  const [newspaperData, setNewspaperData] = useState(null);
+  const [showNewspaperModal, setShowNewspaperModal] = useState(false);
 
   // AI Expiry Tracking & Clearance State
   const [expiryData, setExpiryData] = useState(null);
@@ -61,6 +77,7 @@ export default function Home() {
   const [capturedPhotoUrl, setCapturedPhotoUrl] = useState(null);
   const [photoBlob, setPhotoBlob] = useState(null);
   const [successToast, setSuccessToast] = useState(null);
+  const [trendingProductsAlert, setTrendingProductsAlert] = useState(null);
   const [generatedBill, setGeneratedBill] = useState(null);
 
   // Result & Form State for Product Confirmation
@@ -83,11 +100,67 @@ export default function Home() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
+  // Check saved session in localStorage on mount
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedRole = localStorage.getItem('lastdukan_role');
+      if (savedRole) {
+        setCurrentRole(savedRole);
+      } else {
+        setIsRoleModalOpen(true);
+      }
+
+      const savedCust = localStorage.getItem('lastdukan_customer');
+      if (savedCust) {
+        try { setCustomerInfo(JSON.parse(savedCust)); } catch (e) {}
+      }
+
+      const savedDukan = localStorage.getItem('lastdukan_dukandar');
+      if (savedDukan) {
+        try {
+          const parsed = JSON.parse(savedDukan);
+          setDukandarInfo(parsed);
+          if (parsed.shopId) setShopId(parsed.shopId);
+        } catch (e) {}
+      }
+    }
+
     fetchInventory();
     fetchCustomers();
     fetchExpiryAnalysis();
+    fetchNewspaperEdition();
   }, []);
+
+  const handleSelectCustomerRole = (data) => {
+    setCurrentRole('CUSTOMER');
+    setCustomerInfo(data);
+    setIsRoleModalOpen(false);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('lastdukan_role', 'CUSTOMER');
+      localStorage.setItem('lastdukan_customer', JSON.stringify(data));
+    }
+  };
+
+  const handleSelectDukandarRole = (data) => {
+    setCurrentRole('DUKANDAR');
+    setDukandarInfo(data);
+    if (data.shopId) setShopId(data.shopId);
+    setIsRoleModalOpen(false);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('lastdukan_role', 'DUKANDAR');
+      localStorage.setItem('lastdukan_dukandar', JSON.stringify(data));
+    }
+    fetchInventory();
+  };
+
+  const handleLogout = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('lastdukan_role');
+      localStorage.removeItem('lastdukan_customer');
+      localStorage.removeItem('lastdukan_dukandar');
+    }
+    setIsRoleModalOpen(true);
+  };
 
   async function fetchInventory() {
     try {
@@ -113,6 +186,22 @@ export default function Home() {
     }
   }
 
+  async function fetchNewspaperEdition() {
+    try {
+      const res = await fetch(`${API_BASE}/newspaper/edition?shop_id=${shopId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setNewspaperData(data);
+        if (data.trending_signals && data.trending_signals.length > 0) {
+          setTrendingProductsAlert(data.trending_signals);
+          setTimeout(() => setTrendingProductsAlert(null), 10000); // clear after 10s
+        }
+      }
+    } catch (e) {
+      console.warn('Backend offline mode for newspaper');
+    }
+  }
+
   async function fetchExpiryAnalysis() {
     setIsExpiryLoading(true);
     try {
@@ -123,7 +212,7 @@ export default function Home() {
       }
     } catch (e) {
       console.warn('Backend offline mode for expiry');
-    } finally {
+    } fontally {
       setIsExpiryLoading(false);
     }
   }
@@ -324,7 +413,7 @@ export default function Home() {
     }
   };
 
-  // 1-Tap Loose Micro-Item Quick Cash Sale Handler (e.g. ₹2 Toffee, ₹5 Chocolate for kids)
+  // 1-Tap Loose Micro-Item Quick Cash Sale Handler
   const handleQuickLooseSale = async (itemName, price) => {
     setIsSubmittingBill(true);
     setSuccessToast(null);
@@ -368,7 +457,7 @@ export default function Home() {
     }
   };
 
-  // Direct Udhaar payment handler from UdhaarLedger component
+  // Direct Udhaar payment handler
   const handleDirectUdhaarPayment = async (customer, amount) => {
     try {
       const res = await fetch(`${API_BASE}/udhaar/payment`, {
@@ -413,91 +502,156 @@ export default function Home() {
 
   return (
     <>
-      <Navbar shopId={shopId} />
-      <SegmentTabs activeTab={activeTab} setActiveTab={setActiveTab} />
-      <StatsSummary totalItems={totalItems} stockValue={stockValue} matchedCount={products.length} onOpenSalesModal={() => setShowSalesModal(true)} />
+      {/* NAVBAR WITH ACCOUNT BADGE AND LOGOUT BUTTON */}
+      <Navbar
+        currentRole={currentRole}
+        shopId={shopId}
+        userInfo={currentRole === 'CUSTOMER' ? customerInfo : dukandarInfo}
+        onLogout={handleLogout}
+      />
 
-      {activeTab === 'add_inventory' && (
-        <main className="flex flex-col gap-4">
-          <AddInventoryWindow
-            videoRef={videoRef}
-            canvasRef={canvasRef}
-            workflowStep={workflowStep}
-            capturedPhotoUrl={capturedPhotoUrl}
-            recordedAudioBlob={recordedAudioBlob}
-            setRecordedAudioBlob={setRecordedAudioBlob}
-            handleTakeSnap={handleTakeSnap}
-            handleAnalyzeProductOnboard={handleAnalyzeProductOnboard}
-            handleResetToCamera={handleResetToCamera}
-            quickMode={quickMode}
-            setQuickMode={setQuickMode}
-            aiResult={aiResult}
-            manualForm={manualForm}
-            setManualForm={setManualForm}
-            handleSaveConfirmedProduct={handleSaveConfirmedProduct}
-            isSubmitting={isSubmittingBill}
-            successToast={successToast}
-            expiryData={expiryData}
-            onOpenExpiryModal={() => setShowExpiryModal(true)}
-          />
-        </main>
+      {/* INITIAL ROLE SELECTION & LOGIN PORTAL */}
+      <RoleSelectionModal
+        isOpen={isRoleModalOpen}
+        onSelectCustomer={handleSelectCustomerRole}
+        onSelectDukandar={handleSelectDukandarRole}
+        onClose={() => setIsRoleModalOpen(false)}
+      />
+
+      {/* GLOBAL TRENDING PRODUCTS POPUP */}
+      {trendingProductsAlert && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-top-10 fade-in duration-500 ease-out pointer-events-none w-full max-w-sm px-4">
+          <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.3)] border border-blue-100 p-4 flex flex-col gap-3 pointer-events-auto ring-1 ring-black/5">
+            <div className="flex items-center gap-3 border-b border-gray-100 pb-3">
+              <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
+                <span className="animate-bounce text-lg">🔥</span>
+              </div>
+              <div className="flex flex-col">
+                <h3 className="font-extrabold text-blue-900 text-sm tracking-tight leading-none">इलाके में भारी मांग!</h3>
+                <p className="text-[10px] text-gray-500 font-medium mt-1">आपकी दुकान के आस-पास लोग ये खोज रहे हैं</p>
+              </div>
+            </div>
+            <ul className="flex flex-col gap-2.5">
+              {trendingProductsAlert.map((item, idx) => (
+                <li key={idx} className="flex justify-between items-center text-xs font-bold text-gray-800">
+                  <span className="truncate pr-2">{item.query}</span>
+                  <span className="bg-orange-500 text-white px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider flex-shrink-0 shadow-sm">
+                    {item.count} Searches
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-1 pt-2 border-t border-gray-50 text-center">
+              <span className="text-[10px] text-blue-600 font-bold bg-blue-50 px-3 py-1 rounded-full uppercase tracking-widest">
+                दैनिक समाचार में पूरी रिपोर्ट देखें
+              </span>
+            </div>
+          </div>
+        </div>
       )}
 
-      {activeTab === 'ai_bill' && (
-        <main className="flex flex-col gap-4">
-          <AIBillWindow
-            videoRef={videoRef}
-            canvasRef={canvasRef}
-            workflowStep={workflowStep}
-            capturedPhotoUrl={capturedPhotoUrl}
-            recordedAudioBlob={recordedAudioBlob}
-            setRecordedAudioBlob={setRecordedAudioBlob}
-            handleTakeSnap={handleTakeSnap}
-            handleAnalyzeProduct={handleAnalyzeBill}
-            handleQuickLooseSale={handleQuickLooseSale}
-            handleResetToCamera={handleResetToCamera}
-            successToast={successToast}
-            generatedBill={generatedBill}
-            setGeneratedBill={setGeneratedBill}
+      {/* MAIN CONTENT VIEW BASED ON ACTIVE ROLE */}
+      {currentRole === 'CUSTOMER' ? (
+        <main className="mt-4">
+          <CustomerPortal
+            customerInfo={customerInfo}
             speakAIVoicePrompt={speakAIVoicePrompt}
-            isSubmitting={isSubmittingBill}
-            customerName={customerName}
-            setCustomerName={setCustomerName}
-            customerPhone={customerPhone}
-            setCustomerPhone={setCustomerPhone}
-            sendSms={sendSms}
-            setSendSms={setSendSms}
-            discountAmount={discountAmount}
-            setDiscountAmount={setDiscountAmount}
-            customUdhaarAmount={customUdhaarAmount}
-            setCustomUdhaarAmount={setCustomUdhaarAmount}
-            existingCustomers={customers}
           />
         </main>
+      ) : (
+        <>
+          <SegmentTabs activeTab={activeTab} setActiveTab={setActiveTab} />
+          <StatsSummary totalItems={totalItems} stockValue={stockValue} matchedCount={products.length} onOpenSalesModal={() => setShowSalesModal(true)} />
+
+          {activeTab === 'add_inventory' && (
+            <main className="flex flex-col gap-4">
+              <AddInventoryWindow
+                videoRef={videoRef}
+                canvasRef={canvasRef}
+                workflowStep={workflowStep}
+                capturedPhotoUrl={capturedPhotoUrl}
+                recordedAudioBlob={recordedAudioBlob}
+                setRecordedAudioBlob={setRecordedAudioBlob}
+                handleTakeSnap={handleTakeSnap}
+                handleAnalyzeProductOnboard={handleAnalyzeProductOnboard}
+                handleResetToCamera={handleResetToCamera}
+                quickMode={quickMode}
+                setQuickMode={setQuickMode}
+                aiResult={aiResult}
+                manualForm={manualForm}
+                setManualForm={setManualForm}
+                handleSaveConfirmedProduct={handleSaveConfirmedProduct}
+                isSubmitting={isSubmittingBill}
+                successToast={successToast}
+                expiryData={expiryData}
+                onOpenExpiryModal={() => setShowExpiryModal(true)}
+                newspaperData={newspaperData}
+                onOpenNewspaperModal={() => setShowNewspaperModal(true)}
+                speakAIVoicePrompt={speakAIVoicePrompt}
+              />
+            </main>
+          )}
+
+          {activeTab === 'ai_bill' && (
+            <main className="flex flex-col gap-4">
+              <AIBillWindow
+                videoRef={videoRef}
+                canvasRef={canvasRef}
+                workflowStep={workflowStep}
+                capturedPhotoUrl={capturedPhotoUrl}
+                recordedAudioBlob={recordedAudioBlob}
+                setRecordedAudioBlob={setRecordedAudioBlob}
+                handleTakeSnap={handleTakeSnap}
+                handleAnalyzeProduct={handleAnalyzeBill}
+                handleQuickLooseSale={handleQuickLooseSale}
+                handleResetToCamera={handleResetToCamera}
+                successToast={successToast}
+                generatedBill={generatedBill}
+                setGeneratedBill={setGeneratedBill}
+                speakAIVoicePrompt={speakAIVoicePrompt}
+                isSubmitting={isSubmittingBill}
+                customerName={customerName}
+                setCustomerName={setCustomerName}
+                customerPhone={customerPhone}
+                setCustomerPhone={setCustomerPhone}
+                sendSms={sendSms}
+                setSendSms={setSendSms}
+                discountAmount={discountAmount}
+                setDiscountAmount={setDiscountAmount}
+                customUdhaarAmount={customUdhaarAmount}
+                setCustomUdhaarAmount={setCustomUdhaarAmount}
+                existingCustomers={customers}
+              />
+            </main>
+          )}
+
+          {activeTab === 'inventory' && (
+            <main className="flex flex-col gap-4">
+              <InventoryCatalog
+                products={products}
+                onUpdateStock={handleUpdateStock}
+                shopId={shopId}
+                expiryData={expiryData}
+                onOpenExpiryModal={() => setShowExpiryModal(true)}
+                newspaperData={newspaperData}
+                onOpenNewspaperModal={() => setShowNewspaperModal(true)}
+                speakAIVoicePrompt={speakAIVoicePrompt}
+              />
+            </main>
+          )}
+
+          {activeTab === 'udhaar' && (
+            <main className="flex flex-col gap-4">
+              <UdhaarLedger
+                customers={customers}
+                onRecordPayment={handleDirectUdhaarPayment}
+              />
+            </main>
+          )}
+        </>
       )}
 
-      {activeTab === 'inventory' && (
-        <main className="flex flex-col gap-4">
-          <InventoryCatalog
-            products={products}
-            onUpdateStock={handleUpdateStock}
-            shopId={shopId}
-            expiryData={expiryData}
-            onOpenExpiryModal={() => setShowExpiryModal(true)}
-          />
-        </main>
-      )}
-
-      {activeTab === 'udhaar' && (
-        <main className="flex flex-col gap-4">
-          <UdhaarLedger
-            customers={customers}
-            onRecordPayment={handleDirectUdhaarPayment}
-          />
-        </main>
-      )}
-
-      {/* DUKANDAR SALES & BILLS REGISTER MODAL OVERLAY */}
+      {/* DUKANDAR SALES REGISTER MODAL */}
       {showSalesModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in">
           <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[92vh] overflow-y-auto p-4 sm:p-6 border-2 border-emerald-600 shadow-2xl">
@@ -506,7 +660,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* AI EXPIRY CLEARANCE TRACKER MODAL OVERLAY */}
+      {/* AI EXPIRY CLEARANCE TRACKER MODAL */}
       {showExpiryModal && (
         <ExpiryTrackerModal
           expiryData={expiryData}
@@ -516,6 +670,17 @@ export default function Home() {
           onRefreshStrategies={fetchExpiryAnalysis}
           speakAIVoicePrompt={speakAIVoicePrompt}
           isLoading={isExpiryLoading}
+        />
+      )}
+
+      {/* DAILY AI SHOP NEWSPAPER MODAL */}
+      {showNewspaperModal && (
+        <ShopNewspaperModal
+          newspaperData={newspaperData}
+          onClose={() => setShowNewspaperModal(false)}
+          onApplyDiscount={handleApplyExpiryDiscount}
+          onUpdateStock={handleUpdateStock}
+          speakAIVoicePrompt={speakAIVoicePrompt}
         />
       )}
     </>
