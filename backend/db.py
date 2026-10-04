@@ -12,7 +12,8 @@ LOCAL_MEMORY_STORE: Dict[str, List[Dict[str, Any]]] = {
     ],
     "bills": [],
     "bill_items": [],
-    "udhaar_logs": []
+    "udhaar_logs": [],
+    "weekly_sms_broadcasts": []
 }
 
 class TableClient:
@@ -22,6 +23,7 @@ class TableClient:
         self.table_name = table_name
         self.eq_filters = {}
         self.ilike_filters = {}
+        self.gt_filters = {}
         self.order_col = None
         self.order_desc = False
         self.limit_val = None
@@ -38,6 +40,10 @@ class TableClient:
 
     def ilike(self, column: str, value: Any):
         self.ilike_filters[column] = str(value).lower()
+        return self
+
+    def gt(self, column: str, value: Any):
+        self.gt_filters[column] = float(value)
         return self
 
     def order(self, column: str, desc: bool = False):
@@ -90,6 +96,12 @@ class TableClient:
                 for k, v in self.ilike_filters.items():
                     val = str(item.get(k) or "").lower()
                     if v not in val:
+                        match = False
+                        break
+            if match:
+                for k, v in self.gt_filters.items():
+                    val = float(item.get(k) or 0)
+                    if val <= v:
                         match = False
                         break
             if match:

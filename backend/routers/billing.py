@@ -11,7 +11,9 @@ from services.billing_service import (
     get_customer_history,
     get_udhaar_summary,
     attach_phone_to_customer_and_bill,
-    get_sales_analytics
+    get_sales_analytics,
+    broadcast_weekly_udhaar_reminders,
+    get_weekly_broadcast_logs
 )
 from services.sms_service import send_udhaar_reminder_sms
 from services.voice_service import process_voice_audio, parse_transcript_with_gemini
@@ -48,6 +50,9 @@ class AddPhoneRequest(BaseModel):
     customer_id: Optional[str] = None
     bill_id: Optional[str] = None
     customer_name: Optional[str] = None
+
+class BroadcastRequest(BaseModel):
+    shop_id: str = settings.DEFAULT_SHOP_ID
 
 @router.post("/create-bill")
 async def create_bill_endpoint(
@@ -137,7 +142,7 @@ async def create_bill_endpoint(
 async def create_bill_direct_endpoint(req: ManualBillRequest):
     """
     Direct JSON API endpoint for generating bills from structured frontend forms.
-    Deducts stock automatically, updates customer Udhaar, and sends Vendal SMS.
+    Deducts stock automatically, updates customer Udhaar, and sends Vendel SMS.
     """
     return await create_smart_bill(
         shop_id=req.shop_id,
@@ -155,7 +160,7 @@ async def create_bill_direct_endpoint(req: ManualBillRequest):
 async def udhaar_payment_endpoint(req: UdhaarPaymentRequest):
     """
     Records an Udhaar debt settlement payment when customer pays later.
-    Dispatches Vendal payment receipt SMS.
+    Dispatches Vendel payment receipt SMS.
     """
     return await record_udhaar_payment(
         shop_id=req.shop_id,
@@ -168,7 +173,7 @@ async def udhaar_payment_endpoint(req: UdhaarPaymentRequest):
 @router.post("/customers/send-reminder")
 async def send_reminder_endpoint(req: SendReminderRequest):
     """
-    Triggers Vendal SMS debt payment reminder to customer's mobile number.
+    Triggers Vendel SMS debt payment reminder to customer's mobile number.
     """
     supabase = get_supabase()
     if not supabase:
@@ -265,3 +270,18 @@ async def get_sales_analytics_endpoint(
     and fetches stored receipts for Indian Dukandars.
     """
     return await get_sales_analytics(shop_id=shop_id, period=period)
+
+@router.post("/udhaar/broadcast-weekly-reminders")
+async def broadcast_weekly_reminders_endpoint(req: Optional[BroadcastRequest] = None):
+    """
+    Automated / Manual trigger for weekly Udhaar debt payment reminder SMS broadcast via Vendel Gateway.
+    """
+    shop_id = req.shop_id if req else settings.DEFAULT_SHOP_ID
+    return await broadcast_weekly_udhaar_reminders(shop_id=shop_id)
+
+@router.get("/udhaar/broadcast-logs")
+async def get_broadcast_logs_endpoint(shop_id: str = settings.DEFAULT_SHOP_ID):
+    """
+    Fetches recipient logs and delivery reports for weekly Udhaar SMS broadcasts.
+    """
+    return await get_weekly_broadcast_logs(shop_id=shop_id)

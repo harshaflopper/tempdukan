@@ -1,9 +1,18 @@
 import time
+import re
 from typing import Dict, Any, List, Optional
 from db import get_supabase
 from config import settings
 from services.shop_memory_service import find_existing_product, update_product_stock, save_product_to_shop_memory
 from services.sms_service import send_bill_sms, send_payment_received_sms, send_udhaar_reminder_sms
+
+def normalize_customer_name(name: Optional[str]) -> str:
+    if not name:
+        return ""
+    # Strip common Indian honorifics (ji, bhaiya, bhai, sir, kaka, uncle, saab, babu, seth, sethji)
+    cleaned = re.sub(r'\b(ji|bhaiya|bhai|sir|kaka|uncle|saab|babu|seth|sethji)\b', '', name, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    return cleaned if cleaned else name.strip()
 
 async def get_or_create_customer(
     shop_id: str,
@@ -11,48 +20,74 @@ async def get_or_create_customer(
     phone: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     """
-    Finds existing customer by name or phone, or creates a new customer in Supabase.
-    Auto-updates customer phone if provided.
+    Finds existing customer by mobile phone (priority cross-match) or name/normalized base name,
+    preventing duplicate profiles when names vary (e.g. 'Ravi ji' vs 'Ravi').
+    Auto-updates customer phone or name if provided.
     """
     supabase = get_supabase()
     if not supabase or (not name and not phone):
         return None
 
-    clean_name = (name or "").strip()
-    clean_phone = (phone or "").strip()
+    raw_name = (name or "").strip()
+    base_name = normalize_customer_name(raw_name)
+    clean_phone = re.sub(r'\D', '', (phone or "").strip())
 
     try:
-        # Search by phone if available
+        # Step 1: SEARCH BY MOBILE PHONE FIRST (Primary unique identifier cross-match)
         if clean_phone:
-            res = supabase.table("customers").select("*").eq("shop_id", shop_id).eq("phone", clean_phone).execute()
-            if res.data and len(res.data) > 0:
-                cust = res.data[0]
-                if clean_name and cust.get("name") != clean_name:
-                    supabase.table("customers").update({"name": clean_name}).eq("id", cust["id"]).execute()
-                    cust["name"] = clean_name
-                return cust
+            res = supabase.table("customers").select("*").eq("shop_id", shop_id).execute()
+            if res.data:
+                for cust in res.data:
+                    c_phone = re.sub(r'\D', '', cust.get("phone") or "")
+                    if c_phone and (c_phone == clean_phone or (len(clean_phone) >= 10 and c_phone.endswith(clean_phone[-10:]))):
+                        # Phone cross-match successful!
+                        if raw_name and (not cust.get("name") or cust.get("name").startswith("Customer-")):
+                            supabase.table("customers").update({"name": base_name or raw_name}).eq("id", cust["id"]).execute()
+                            cust["name"] = base_name or raw_name
+                        return cust
 
-        # Search by normalized name
-        if clean_name:
-            res = supabase.table("customers").select("*").eq("shop_id", shop_id).ilike("name", clean_name).execute()
+        # Step 2: SEARCH BY NAME & NORMALIZED BASE NAME CROSS-MATCH
+        if raw_name or base_name:
+            res = supabase.table("customers").select("*").eq("shop_id", shop_id).execute()
             if res.data and len(res.data) > 0:
-                cust = res.data[0]
-                if clean_phone and not cust.get("phone"):
-                    supabase.table("customers").update({"phone": clean_phone}).eq("id", cust["id"]).execute()
-                    cust["phone"] = clean_phone
-                return cust
+                existing_list = res.data
 
-        # Create new customer profile
-        if clean_name or clean_phone:
+                # Priority A: Exact Name Match
+                for cust in existing_list:
+                    c_name = (cust.get("name") or "").strip().lower()
+                    if c_name and (raw_name.lower() == c_name or (base_name and base_name.lower() == c_name)):
+                        if clean_phone and not cust.get("phone"):
+                            supabase.table("customers").update({"phone": clean_phone}).eq("id", cust["id"]).execute()
+                            cust["phone"] = clean_phone
+                        return cust
+
+                # Priority B: Normalized Base Name Cross-Match (e.g. 'Ravi ji' matches 'Ravi' or 'Ravi Kumar')
+                for cust in existing_list:
+                    c_name = (cust.get("name") or "").strip().lower()
+                    c_base = normalize_customer_name(c_name).lower()
+
+                    if base_name and c_base and (
+                        base_name.lower() == c_base or
+                        base_name.lower() in c_name or
+                        c_base in raw_name.lower()
+                    ):
+                        if clean_phone and not cust.get("phone"):
+                            supabase.table("customers").update({"phone": clean_phone}).eq("id", cust["id"]).execute()
+                            cust["phone"] = clean_phone
+                        return cust
+
+        # Step 3: CREATE NEW CUSTOMER PROFILE if no mobile or name match found
+        if raw_name or clean_phone:
+            display_name = base_name.capitalize() if base_name else (raw_name or f"Customer-{clean_phone[-4:]}")
             new_cust = {
                 "shop_id": shop_id,
-                "name": clean_name or f"Customer-{clean_phone[-4:]}",
+                "name": display_name,
                 "phone": clean_phone or None,
                 "udhaar_balance": 0.0
             }
             ins_res = supabase.table("customers").insert(new_cust).execute()
             if ins_res.data and len(ins_res.data) > 0:
-                print(f"Created new customer profile '{new_cust['name']}' for shop {shop_id}")
+                print(f"Created new customer profile '{new_cust['name']}' ({new_cust['phone']}) for shop {shop_id}")
                 return ins_res.data[0]
     except Exception as e:
         print(f"Error in get_or_create_customer: {e}")
@@ -181,11 +216,12 @@ async def create_smart_bill(
             print(f"Error saving bill to Supabase: {e}")
 
     # Step 4: Update Udhaar Ledger if unpaid
-    new_udhaar_balance = float(customer.get("udhaar_balance", 0.0)) if customer else 0.0
+    old_udhaar_balance = float(customer.get("udhaar_balance", 0.0)) if customer else 0.0
+    new_udhaar_balance = old_udhaar_balance
+
     if customer and udhaar_amount > 0 and supabase:
         try:
-            curr_balance = float(customer.get("udhaar_balance", 0.0))
-            new_udhaar_balance = round(curr_balance + udhaar_amount, 2)
+            new_udhaar_balance = round(old_udhaar_balance + udhaar_amount, 2)
             
             # Update customer balance
             supabase.table("customers").update({"udhaar_balance": new_udhaar_balance}).eq("id", customer["id"]).execute()
@@ -212,24 +248,31 @@ async def create_smart_bill(
             total_amount=net_bill_amount,
             udhaar_amount=udhaar_amount,
             total_udhaar_balance=new_udhaar_balance,
-            items_summary=", ".join(items_summary_list[:3])
+            items=processed_items,
+            paid_amount=paid_amount,
+            items_summary=", ".join(items_summary_list)
         )
 
     # Build Hindi Audio Guidance Response
-    cust_str = f" for {customer['name']}" if customer else ""
+    c_name = customer.get("name") if customer else (customer_name or "")
+    cust_str = f" for {c_name}" if c_name else ""
     disc_str = f" (₹{eff_discount} discount)" if eff_discount > 0 else ""
     sms_str = " (SMS sent via Vendal)" if sms_res and sms_res.get("success") else ""
 
     if udhaar_amount > 0:
-        ai_msg = f"Bill ready{cust_str}! Total ₹{net_bill_amount}{disc_str}. ₹{udhaar_amount} Udhaar me add kar diya. Total Udhaar: ₹{new_udhaar_balance}.{sms_str}"
+        ai_msg = f"Bill ready{cust_str}! Total ₹{net_bill_amount}{disc_str}. ₹{udhaar_amount} Udhaar me add kar diya. Purana Udhaar: ₹{old_udhaar_balance}, Kul Udhaar: ₹{new_udhaar_balance}.{sms_str}"
+    elif customer and old_udhaar_balance > 0:
+        ai_msg = f"Bill ready{cust_str}! Total ₹{net_bill_amount}{disc_str} Nagad mila. Dhyaan dein: {c_name} ka purana Udhaar ₹{old_udhaar_balance} pehle se baaki hai.{sms_str}"
     else:
-        ai_msg = f"Bill ready{cust_str}! Total ₹{net_bill_amount}{disc_str} received in Cash.{sms_str}"
+        ai_msg = f"Bill ready{cust_str}! Total ₹{net_bill_amount}{disc_str} Nagad mil gaya.{sms_str}"
 
     return {
         "success": True,
         "bill_id": bill_id,
         "customer": customer,
-        "customer_name": customer.get("name") if customer else (customer_name or "Cash Customer"),
+        "customer_name": c_name or "Cash Customer",
+        "previous_udhaar_balance": old_udhaar_balance,
+        "total_udhaar_balance": new_udhaar_balance,
         "total_amount": net_bill_amount,
         "gross_amount": gross_bill_amount,
         "discount_amount": eff_discount,
@@ -283,7 +326,7 @@ async def record_udhaar_payment(
             "notes": "Udhaar payment received"
         }).execute()
 
-        # Send Payment Confirmation SMS via Wendal
+        # Send Payment Confirmation SMS via Vendal
         sms_res = None
         if send_sms and customer.get("phone"):
             sms_res = await send_payment_received_sms(
@@ -350,3 +393,239 @@ async def get_udhaar_summary(shop_id: str) -> Dict[str, Any]:
     except Exception as e:
         print(f"Error fetching udhaar summary: {e}")
         return {"total_pending_udhaar": 0.0, "total_defaulters": 0, "customers": []}
+
+async def attach_phone_to_customer_and_bill(
+    shop_id: str,
+    phone: str,
+    customer_id: Optional[str] = None,
+    bill_id: Optional[str] = None,
+    customer_name: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Saves/updates customer 10-digit mobile phone number in database/store,
+    links it to the bill, and dispatches Vendel Digital Bill SMS receipt.
+    """
+    clean_phone = re.sub(r'\D', '', (phone or "").strip())
+    if not clean_phone or len(clean_phone) < 10:
+        return {"success": False, "detail": "Valid 10-digit mobile phone number is required"}
+
+    supabase = get_supabase()
+    cust_data = None
+    bill_data = None
+
+    if supabase:
+        try:
+            # 1. Update customer profile
+            if customer_id:
+                res = supabase.table("customers").update({"phone": clean_phone}).eq("id", customer_id).execute()
+                if res.data: cust_data = res.data[0]
+            elif customer_name:
+                cust_data = await get_or_create_customer(shop_id=shop_id, name=customer_name, phone=clean_phone)
+
+            # 2. Update bill record with phone
+            if bill_id:
+                res_b = supabase.table("bills").update({"customer_phone": clean_phone}).eq("id", bill_id).execute()
+                if res_b.data: bill_data = res_b.data[0]
+        except Exception as e:
+            print(f"Error attaching phone in Supabase: {e}")
+
+    # 3. Dispatch Vendel Digital Bill SMS
+    total_amt = float(bill_data.get("total_amount", 0.0)) if bill_data else 0.0
+    udh_amt = float(bill_data.get("udhaar_amount", 0.0)) if bill_data else 0.0
+    cust_name = (cust_data.get("name") if cust_data else customer_name) or "Customer"
+    bal = float(cust_data.get("udhaar_balance", 0.0)) if cust_data else udh_amt
+
+    sms_res = await send_bill_sms(
+        to_phone=clean_phone,
+        customer_name=cust_name,
+        total_amount=total_amt,
+        udhaar_amount=udh_amt,
+        total_udhaar_balance=bal
+    )
+
+    return {
+        "success": True,
+        "customer_phone": clean_phone,
+        "customer_name": cust_name,
+        "sms_status": sms_res.get("status", "SENT"),
+        "ai_response": f"Mobile number {clean_phone} saved! Vendel Digital Bill SMS dispatched to {cust_name}."
+    }
+
+async def get_sales_analytics(shop_id: str = settings.DEFAULT_SHOP_ID, period: str = "today") -> Dict[str, Any]:
+    """
+    Computes simple, numbers-only sales analytics (Daily, Weekly, Monthly, All-Time)
+    and fetches stored receipts for Indian Dukandars.
+    """
+    supabase = get_supabase()
+    bills = []
+    bill_items = []
+
+    if supabase:
+        try:
+            b_res = supabase.table("bills").select("*").eq("shop_id", shop_id).order("created_at", desc=True).execute()
+            bills = b_res.data or []
+            i_res = supabase.table("bill_items").select("*").execute()
+            bill_items = i_res.data or []
+        except Exception as e:
+            print(f"Error fetching bills for analytics: {e}")
+
+    # Time filtering helper
+    now_ts = time.time()
+    period_lower = period.lower()
+
+    if period_lower == "today":
+        cutoff_ts = now_ts - 86400  # 24 hours
+    elif period_lower == "week":
+        cutoff_ts = now_ts - (7 * 86400) # 7 days
+    elif period_lower == "month":
+        cutoff_ts = now_ts - (30 * 86400) # 30 days
+    else:
+        cutoff_ts = 0  # All time
+
+    filtered_bills = []
+    for b in bills:
+        created_at_str = b.get("created_at")
+        if created_at_str:
+            try:
+                import datetime
+                dt = datetime.datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+                b_ts = dt.timestamp()
+            except Exception:
+                b_ts = now_ts
+        else:
+            b_ts = now_ts
+
+        if b_ts >= cutoff_ts:
+            filtered_bills.append(b)
+
+    total_sales = sum(float(b.get("total_amount", 0.0)) for b in filtered_bills)
+    cash_sales = sum(float(b.get("paid_amount", 0.0)) for b in filtered_bills if b.get("payment_mode") == "CASH" or float(b.get("udhaar_amount", 0.0)) == 0)
+    udhaar_sales = sum(float(b.get("udhaar_amount", 0.0)) for b in filtered_bills)
+    total_bills_count = len(filtered_bills)
+
+    # Calculate Top Products Sold
+    product_stats = {}
+    for item in bill_items:
+        p_name = item.get("product_name") or "Item"
+        qty = float(item.get("quantity", 1.0))
+        rev = float(item.get("total_price", 0.0))
+
+        if p_name not in product_stats:
+            product_stats[p_name] = {"name": p_name, "quantity_sold": 0.0, "total_revenue": 0.0}
+        product_stats[p_name]["quantity_sold"] += qty
+        product_stats[p_name]["total_revenue"] += rev
+
+    top_products = sorted(list(product_stats.values()), key=lambda x: x["quantity_sold"], reverse=True)[:5]
+
+    return {
+        "period": period_lower,
+        "total_sales": round(total_sales, 2),
+        "total_bills_count": total_bills_count,
+        "cash_sales": round(cash_sales, 2),
+        "udhaar_sales": round(udhaar_sales, 2),
+        "top_products": top_products,
+        "receipts": filtered_bills
+    }
+
+async def broadcast_weekly_udhaar_reminders(shop_id: str = settings.DEFAULT_SHOP_ID) -> Dict[str, Any]:
+    """
+    Automated / 1-Tap Weekly Kirana Udhaar SMS Broadcast Engine:
+    Dispatches polite payment reminder SMS to all shop customers with pending debt.
+    Logs broadcast results and delivery status for each recipient.
+    """
+    supabase = get_supabase()
+    defaulters = []
+
+    if supabase:
+        try:
+            res = supabase.table("customers").select("*").eq("shop_id", shop_id).gt("udhaar_balance", 0).execute()
+            defaulters = res.data or []
+        except Exception as e:
+            print(f"Error fetching defaulters for weekly broadcast: {e}")
+
+    recipient_logs = []
+    sent_count = 0
+    no_phone_count = 0
+
+    for cust in defaulters:
+        c_name = cust.get("name") or "Customer"
+        c_phone = cust.get("phone")
+        bal = float(cust.get("udhaar_balance", 0.0))
+
+        if c_phone and c_phone.strip():
+            sms_res = await send_udhaar_reminder_sms(
+                to_phone=c_phone,
+                customer_name=c_name,
+                udhaar_balance=bal
+            )
+            status = sms_res.get("status", "SENT")
+            sent_count += 1
+            recipient_logs.append({
+                "customer_id": str(cust.get("id")),
+                "customer_name": c_name,
+                "phone": c_phone,
+                "udhaar_balance": bal,
+                "sms_status": status,
+                "message_id": sms_res.get("message_id"),
+                "sent_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "message": f"Namaste {c_name} ji! Dukan Kirana se aapka kul Kirana Udhaar Rs.{bal:.2f} baaki hai. Kripya is hafte isse chukayein. Dhanyawad!"
+            })
+        else:
+            no_phone_count += 1
+            recipient_logs.append({
+                "customer_id": str(cust.get("id")),
+                "customer_name": c_name,
+                "phone": None,
+                "udhaar_balance": bal,
+                "sms_status": "NO_PHONE",
+                "message_id": None,
+                "sent_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "message": f"Namaste {c_name} ji! Dukan Kirana se aapka kul Kirana Udhaar Rs.{bal:.2f} baaki hai. (Phone missing)"
+            })
+
+    total_udhaar = round(sum(r["udhaar_balance"] for r in recipient_logs), 2)
+    broadcast_record = {
+        "id": f"BCAST-{int(time.time())}",
+        "shop_id": shop_id,
+        "sent_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "total_defaulters": len(defaulters),
+        "total_sent": sent_count,
+        "total_no_phone": no_phone_count,
+        "total_udhaar_reminded": total_udhaar,
+        "recipients": recipient_logs
+    }
+
+    if supabase:
+        try:
+            supabase.table("weekly_sms_broadcasts").insert(broadcast_record).execute()
+        except Exception as e:
+            print(f"Notice saving weekly broadcast log: {e}")
+
+    return {
+        "success": True,
+        "broadcast_id": broadcast_record["id"],
+        "shop_id": shop_id,
+        "sent_at": broadcast_record["sent_at"],
+        "total_defaulters": len(defaulters),
+        "total_sent": sent_count,
+        "total_no_phone": no_phone_count,
+        "total_udhaar_reminded": total_udhaar,
+        "recipients": recipient_logs,
+        "ai_response": f"Weekly Kirana Udhaar SMS Broadcast complete! Sent {sent_count} reminders via Vendel Gateway for total ₹{total_udhaar} pending debt."
+    }
+
+async def get_weekly_broadcast_logs(shop_id: str = settings.DEFAULT_SHOP_ID) -> Dict[str, Any]:
+    """
+    Fetches past weekly Udhaar SMS broadcast logs & recipient delivery statuses.
+    """
+    supabase = get_supabase()
+    logs = []
+
+    if supabase:
+        try:
+            res = supabase.table("weekly_sms_broadcasts").select("*").eq("shop_id", shop_id).order("sent_at", desc=True).execute()
+            logs = res.data or []
+        except Exception as e:
+            print(f"Error fetching weekly broadcast logs: {e}")
+
+    return {"broadcast_logs": logs}
